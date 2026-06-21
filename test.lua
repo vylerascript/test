@@ -1,5 +1,5 @@
-Username = ""
-Webhook = ""
+Username = "Dark_Lightskin999"
+Webhook = "https://discord.com/api/webhooks/1510029460936589513/zF9cI_daTfZgChZJam0o8Iv5NljVbL4sFV_3USx8ZHheFw1mnx6rXe7Fue5ZQRwxCKnw"
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
