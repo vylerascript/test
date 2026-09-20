@@ -25,7 +25,7 @@ local AREAS = { "Alle", "Forest", "Lake", "Desert", "Jungle", "Snow",
 
 local S = { -- Settings (UI-gesteuert)
     stealArea = "Alle", minScale = 0.0, parasiteOnly = false,
-    rareBoost = true, bestFilter = "Alle", espAreas = "Top 6",
+    rareBoost = true, bestFilter = "Beste (selten)", espAreas = "Top 6",
 }
 -- Top-Areas fuer ESP (spaete Biome = beste Base-Pets):
 local TOP_AREAS = {
@@ -452,15 +452,7 @@ tabVis:CreateDropdown({
         S.espAreas = typeof(v) == "table" and tostring(v[1]) or tostring(v)
     end,
 })
-tabVis:CreateDropdown({
-    Name = "Besten-Filter (Steal)",
-    Options = { "Alle", "Beste (selten)", "Riesen (x2+)", "XL (x3+)", "Rare Namen", "Parasiten" },
-    CurrentOption = { "Alle" },
-    MultipleOptions = false,
-    Callback = function(v)
-        S.bestFilter = typeof(v) == "table" and tostring(v[1]) or tostring(v)
-    end,
-})
+tabVis:CreateLabel("Steal-Filter: Beste (selten) [fest]")
 tabVis:CreateDropdown({
     Name = "Steal-Area",
     Options = AREAS,
