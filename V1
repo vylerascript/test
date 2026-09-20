@@ -172,11 +172,13 @@ local function espTick()
     local recs = snap()
     if not recs then return end -- FEHLER: alte Labels behalten!
     -- pro Area: Top 3 nach Score (Parasit/Rare zuerst)
+    -- Alles ausser "Alle Areas" = Top-6-Modus (ausfallsicher):
+    local top6Only = tostring(S.espAreas or "Top 6") ~= "Alle Areas"
     local perArea = {}
     for _, r in ipairs(recs) do
         if typeof(r) == "table" and r.State == "Slot" then
             local a = tostring(r.AreaId or "?")
-            if S.espAreas ~= "Top 6" or TOP_AREAS[normArea(a)] then
+            if (not top6Only) or TOP_AREAS[normArea(a)] then
                 perArea[a] = perArea[a] or {}
                 table.insert(perArea[a], r)
             end
