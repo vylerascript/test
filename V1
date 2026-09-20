@@ -224,10 +224,12 @@ local function espTick()
     end
     -- Records per POSITION zuordnen (naechster freier Slot < 25m):
     -- Namen sind je Area anders (Suffix vs. Hex), Position luegt nie.
+    -- Carried mitnehmen (Hand-Tracking bis Ablage), Slot UND Hand:
     local usedSlot = {}
     local matchList = {}
     for _, r in ipairs(recs) do
-        if typeof(r) == "table" and r.State == "Slot"
+        if typeof(r) == "table"
+            and (r.State == "Slot" or r.State == "Carried")
             and r.BottomCFrame and typeof(r.BottomCFrame) == "CFrame"
             and TOP_AREAS[normArea(r.AreaId)] then
             local rp = r.BottomCFrame.Position
@@ -272,13 +274,16 @@ local function espTick()
                 if myPos and hb then
                     dist = math.floor((myPos - hb.Position).Magnitude) .. "m"
                 end
-                label = string.format("%s|%s|x%.2f[%s]%s%s|%s",
+                label = string.format("%s|%s|x%.2f[%s]%s%s%s|%s",
                     tostring(rec.AssetCategory or "?"),
                     tostring(rec.AreaId or "?"), sc, cls,
                     rec.HasParasite and "|EVENT" or "",
                     isRare(rec.AssetCategory) and "|BEST" or "",
+                    rec.State == "Carried" and "|HAND" or "",
                     dist)
-                if rec.HasParasite then
+                if rec.State == "Carried" then
+                    col = Color3.fromRGB(255, 150, 40) -- getragen orange
+                elseif rec.HasParasite then
                     col = Color3.fromRGB(220, 130, 255)
                 elseif isRare(rec.AssetCategory) then
                     col = Color3.fromRGB(120, 200, 255) -- Beste blau
@@ -538,7 +543,7 @@ tabVis:CreateToggle({
             task.spawn(function()
                 while flags.esp and alive() do
                     if ensureR() then pcall(espTick) end
-                    task.wait(3)
+                    task.wait(1)
                 end
                 espClear()
             end)
