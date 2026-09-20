@@ -395,11 +395,27 @@ local function panelTargets()
     end
     return out
 end
-local function stealOne(rec)
-    -- hin (Tween), Prompt, zum Plot (Tween), abliefern. true = ok.
-    if not tweenTo(rec.BottomCFrame.Position + Vector3.new(0, 2, 0)) then
-        return false, "Tween hin FAIL"
+local function gotoPos(pos, timeout)
+    -- 1) Instant-TP versuchen (wenn Server mitspielt, sofort da):
+    local r = hrp()
+    if r then
+        pcall(function() r.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end)
+        task.wait(0.6)
+        local r2 = hrp()
+        if r2 and (r2.Position - pos).Magnitude < 12 then
+            return true, "TP"
+        end
     end
+    -- 2) Fallback Tween (kleine Schritte, RigSync-sicherer):
+    if tweenTo(pos + Vector3.new(0, 2, 0), timeout or 30) then
+        return true, "Tween"
+    end
+    return false, "nix"
+end
+local function stealOne(rec)
+    -- hin (TP>Tween), Prompt, zum Plot (TP>Tween), abliefern.
+    local okGo, how = gotoPos(rec.BottomCFrame.Position)
+    if not okGo then return false, "Anreise FAIL" end
     local r1 = hrp()
     if not r1 then return false, "kein Char" end
     local bp, bd = nil, 1e9
@@ -423,7 +439,7 @@ local function stealOne(rec)
     local gate = pen and (pen:FindFirstChild("Prompt1")
         or pen:FindFirstChild("CenterPoint"))
     if gate and gate:IsA("BasePart") then
-        tweenTo(gate.Position + Vector3.new(0, 2, 0))
+        gotoPos(gate.Position + Vector3.new(0, 2, 0), 20)
     end
     deliverEquipped()
     if equippedUid() then return false, "Place FAIL" end
@@ -571,9 +587,10 @@ local function stealTick()
     local pos = best.BottomCFrame.Position
     local r0 = hrp()
     local d0 = r0 and math.floor((r0.Position - pos).Magnitude) or -1
-    stealStatus = "laufe " .. d0 .. "m " .. tostring(best.AssetCategory)
-    if not tweenTo(pos + Vector3.new(0, 2, 0), 30) then
-        stealStatus = "Tween FAIL!"
+    stealStatus = "reise " .. d0 .. "m " .. tostring(best.AssetCategory)
+    local okGo = gotoPos(pos)
+    if not okGo then
+        stealStatus = "Anreise FAIL!"
         return
     end
     stealStatus = "nehme Egg..."
