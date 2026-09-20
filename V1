@@ -339,6 +339,173 @@ local function espClear()
     if espGui then pcall(function() espGui:Destroy() end) end
     espGui = nil
 end
+
+-- ---------- Steal Panel (Liste + Tween-TP + Auto) ----------
+-- Ehrlich: (1) $/s steht NICHT im Snapshot -> Sort nach Score
+-- (Rare/Event/Area), (2) Teleport wird vom Server zurueckgesetzt
+-- (RigSync) -> Tween in kleinen Schritten, (3) WalkSpeed revertet ->
+-- kein Speed-Hack, Tween-Speed stattdessen.
+local function deliverEquipped()
+    local uid = equippedUid()
+    if uid then
+        for _, cf in ipairs(plotSlots()) do
+            pcall(function()
+                return R.Place:InvokeServer({ Uid = uid, LocalCFrame = cf })
+            end)
+            task.wait(1)
+            if not equippedUid() then break end
+        end
+    end
+end
+local panelGui, panelRows, panelSpeedLbl, panelTargetsNow = nil, nil, nil, {}
+local tweenSpeed = 150
+local function tweenTo(pos, timeout)
+    local t0 = os.clock()
+    while os.clock() - t0 < (timeout or 30) do
+        local r = hrp()
+        if not (r and r.Parent) then return false end
+        local delta = pos - r.Position
+        local dist = delta.Magnitude
+        if dist < 6 then return true end
+        local step = math.min(dist, tweenSpeed * 0.05)
+        r.CFrame = CFrame.new(r.Position + delta.Unit * step)
+            * (r.CFrame - r.CFrame.Position)
+        task.wait(0.05)
+    end
+    return false
+end
+local function scoreEgg(r)
+    local s = (AREA_SCORE[tostring(r.AreaId)] or 0) * 1000
+    if isRare(r.AssetCategory) then s = s + 20000 end
+    if r.HasParasite then s = s + 5000 end
+    return s
+end
+local function panelTargets()
+    local recs = snap()
+    local out = {}
+    if recs then
+        for _, r in ipairs(recs) do
+            if typeof(r) == "table" and r.State == "Slot"
+                and r.BottomCFrame and typeof(r.BottomCFrame) == "CFrame"
+                and areaOk(r) and bestOk(r) then
+                table.insert(out, { rec = r, sc = scoreEgg(r) })
+            end
+        end
+        table.sort(out, function(a, b) return a.sc > b.sc end)
+    end
+    return out
+end
+local function stealOne(rec)
+    -- hin (Tween), Prompt, zum Plot (Tween), abliefern. true = ok.
+    if not tweenTo(rec.BottomCFrame.Position + Vector3.new(0, 2, 0)) then
+        return false, "Tween hin FAIL"
+    end
+    local r1 = hrp()
+    if not r1 then return false, "kein Char" end
+    local bp, bd = nil, 1e9
+    for _, c in ipairs(workspace:GetChildren()) do
+        if c.Name == "SmartPromptPart" and c:IsA("BasePart") then
+            local p = c:FindFirstChildOfClass("ProximityPrompt")
+            if p and p.Enabled then
+                local d = (r1.Position - c.Position).Magnitude
+                if d < bd then bp, bd = p, d end
+            end
+        end
+    end
+    if not (bp and bd <= 7) then return false, "Prompt weg!" end
+    pcall(function() fireproximityprompt(bp) end)
+    task.wait(1)
+    if not equippedUid() then return false, "Pickup FAIL" end
+    local plots = workspace:FindFirstChild("Plots")
+    local plot = plots and plots:FindFirstChild(MY_PLOT)
+    local pen = plot and plot:FindFirstChild("ToUpdate")
+    pen = pen and pen:FindFirstChild("StarterPen")
+    local gate = pen and (pen:FindFirstChild("Prompt1")
+        or pen:FindFirstChild("CenterPoint"))
+    if gate and gate:IsA("BasePart") then
+        tweenTo(gate.Position + Vector3.new(0, 2, 0))
+    end
+    deliverEquipped()
+    if equippedUid() then return false, "Place FAIL" end
+    return true, "fertig!"
+end
+local function buildPanel()
+    local parent = nil
+    pcall(function()
+        if typeof(gethui) == "function" then parent = gethui() end
+    end)
+    if not parent then parent = lp.PlayerGui end
+    pcall(function() parent:FindFirstChild("SAEPANEL"):Destroy() end)
+    local g = Instance.new("ScreenGui")
+    g.Name = "SAEPANEL"
+    pcall(function() g.Parent = parent end)
+    if not g.Parent then return end
+    panelGui = g
+    local y = 10
+    local function row(txt, h, cb, color)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(0, 230, 0, h or 30)
+        b.Position = UDim2.new(1, -242, 0, y)
+        b.BackgroundColor3 = color or Color3.fromRGB(20, 20, 28)
+        b.TextColor3 = Color3.white
+        b.TextSize = 14
+        b.TextXAlignment = Enum.TextXAlignment.Left
+        b.Text = " " .. txt
+        b.Parent = g
+        if cb then
+            b.MouseButton1Click:Connect(function() task.spawn(cb) end)
+        end
+        y = y + (h or 30) + 4
+        return b
+    end
+    row("Steal Panel (Tap = TP+Steal)", 26, nil,
+        Color3.fromRGB(160, 40, 40))
+    panelRows = {}
+    for i = 1, 8 do
+        local idx = i
+        local b = row("#" .. i .. " ...", 30, function()
+            local t = panelTargetsNow[idx]
+            if t then
+                stealStatus = "Panel: " .. tostring(t.rec.AssetCategory)
+                local ok, msg = stealOne(t.rec)
+                stealStatus = (ok and "Panel: " or "Panel FAIL: ") .. msg
+            end
+        end)
+        panelRows[i] = b
+    end
+    row("Tween -", 26, function()
+        tweenSpeed = math.max(50, tweenSpeed - 30)
+        if panelSpeedLbl then panelSpeedLbl.Text = " Tween: " .. tweenSpeed end
+    end)
+    row("Tween +", 26, function()
+        tweenSpeed = math.min(680, tweenSpeed + 30)
+        if panelSpeedLbl then panelSpeedLbl.Text = " Tween: " .. tweenSpeed end
+    end)
+    panelSpeedLbl = row(" Tween: " .. tweenSpeed, 26, nil)
+    local function refresh()
+        local tg = panelTargets()
+        panelTargetsNow = tg
+        local r0 = hrp()
+        local myPos = r0 and r0.Position or nil
+        for i = 1, 8 do
+            local b = panelRows[i]
+            if not (b and b.Parent) then break end
+            local t = tg[i]
+            if t then
+                local dist = myPos and math.floor(
+                    (myPos - t.rec.BottomCFrame.Position).Magnitude) .. "m" or "?"
+                b.Text = string.format(" #%d %s|%s %s", i,
+                    tostring(t.rec.AssetCategory or "?"),
+                    tostring(t.rec.AreaId or "?"), dist)
+            else
+                b.Text = " #" .. i .. " ---"
+            end
+        end
+    end
+    row("Refresh Liste", 26, refresh)
+    refresh()
+end
+
 local function hatchTick()
     local me = tostring(lp.UserId)
     local ok, res = pcall(function() return R.Live:InvokeServer() end)
@@ -364,18 +531,7 @@ local function hatchTick()
 end
 
 -- ---------- Steal ----------
-local function deliverEquipped()
-    local uid = equippedUid()
-    if uid then
-        for _, cf in ipairs(plotSlots()) do
-            pcall(function()
-                return R.Place:InvokeServer({ Uid = uid, LocalCFrame = cf })
-            end)
-            task.wait(1)
-            if not equippedUid() then break end
-        end
-    end
-end
+-- (deliverEquipped steht oben bei den Helfern, Panel nutzt es auch)
 local function stealTick()
     if equippedUid() then
         stealStatus = "liefere ab..."
@@ -416,8 +572,8 @@ local function stealTick()
     local r0 = hrp()
     local d0 = r0 and math.floor((r0.Position - pos).Magnitude) or -1
     stealStatus = "laufe " .. d0 .. "m " .. tostring(best.AssetCategory)
-    if not moveTo(pos + Vector3.new(0, 2, 0), 25) then
-        stealStatus = "Weg blockiert!"
+    if not tweenTo(pos + Vector3.new(0, 2, 0), 30) then
+        stealStatus = "Tween FAIL!"
         return
     end
     stealStatus = "nehme Egg..."
@@ -490,6 +646,7 @@ tabMain:CreateToggle({
     end,
 })
 local statusLabel = tabMain:CreateLabel("Status: bereit")
+pcall(buildPanel)
 tabMain:CreateLabel("Speed = serverseitig (Treadmill). Kein Hack.")
 tabMain:CreateToggle({
     Name = "Jump-Hack",
