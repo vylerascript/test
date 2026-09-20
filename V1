@@ -238,14 +238,15 @@ local function espTick()
             end
         end
     end
-    -- pro Top-6-Area NUR das beste (Rare/Parasit zuerst):
+    -- pro Top-6-Area NUR das beste (Rare/Parasit zuerst).
+    -- Score 0 (Commons) kommt gar nicht erst rein:
     local bestPerArea = {}
     for _, pr in ipairs(matchList) do
         local a = tostring(pr.rec.AreaId or "?")
         local sc = 0
         if RARE_NAMES[tostring(pr.rec.AssetCategory)] then sc = sc + 20000 end
         if pr.rec.HasParasite then sc = sc + 5000 end
-        if not bestPerArea[a] or sc > bestPerArea[a].sc then
+        if sc > 0 and (not bestPerArea[a] or sc > bestPerArea[a].sc) then
             bestPerArea[a] = { pr = pr, sc = sc }
         end
     end
