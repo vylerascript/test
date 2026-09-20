@@ -172,8 +172,8 @@ end
 local function espTick()
     local recs = snap()
     if not recs then return end -- FEHLER: alte Labels behalten!
-    -- pro Area (NUR Top 6, fest): Top 3 nach Score (Parasit/Rare zuerst,
-    -- Groesse zaehlt NIE):
+    -- pro Area (NUR Top 6, fest): ALLE freien Eggs (jede Groesse),
+    -- Beste markiert:
     local perArea = {}
     for _, r in ipairs(recs) do
         if typeof(r) == "table" and r.State == "Slot" then
@@ -184,14 +184,11 @@ local function espTick()
             end
         end
     end
-    local want = {} -- Uid -> rec (Top 3 je Area)
+    local want = {} -- Uid -> rec (alle Top-6)
     for _, list in pairs(perArea) do
-        table.sort(list, function(x, y)
-            return espScore(x) > espScore(y)
-        end)
-        for i = 1, math.min(3, #list) do
-            if list[i].Uid then want[tostring(list[i].Uid)] = list[i] end
-            if list[i].NestId then want["N:" .. tostring(list[i].NestId)] = list[i] end
+        for _, r in ipairs(list) do
+            if r.Uid then want[tostring(r.Uid)] = r end
+            if r.NestId then want["N:" .. tostring(r.NestId)] = r end
         end
     end
     local r0 = hrp()
@@ -209,18 +206,45 @@ local function espTick()
     local okBuild = pcall(function() g.Parent = parent end)
     if not okBuild then return end
     local n = 0
+    -- Slot-Positionen indexieren (einmal pro Tick):
+    local slotList = {}
     for _, s in ipairs(slots:GetChildren()) do
-        -- Link: 1) :Slot_NNN-Suffix (Forest) 2) Hex-Name = Record-Uid (Rest)
-        local biom, nest = string.match(s.Name, "([^:_]+):(Slot_%d+)$")
-        local rec = nil
-        if nest then rec = want["N:" .. nest] end
-        if not rec then rec = want[s.Name] end
-        if rec then
-            -- Top-3-pro-Area, davon NUR Beste (Rest nie):
+        local anchor = s:FindFirstChild("Hitbox")
+            or s:FindFirstChildWhichIsA("BasePart")
+        if anchor then
+            table.insert(slotList, { s = s, pos = anchor.Position,
+                anchor = anchor })
+        end
+    end
+    -- Records per POSITION zuordnen (naechster freier Slot < 25m):
+    -- Namen sind je Area anders (Suffix vs. Hex), Position luegt nie.
+    local usedSlot = {}
+    local pairs = {}
+    for _, r in ipairs(recs) do
+        if typeof(r) == "table" and r.State == "Slot"
+            and r.BottomCFrame and typeof(r.BottomCFrame) == "CFrame"
+            and TOP_AREAS[normArea(r.AreaId)] then
+            local rp = r.BottomCFrame.Position
+            local bi, bd = 0, 25
+            for i, sl in ipairs(slotList) do
+                if not usedSlot[i] then
+                    local d = (sl.pos - rp).Magnitude
+                    if d < bd then bi, bd = i, d end
+                end
+            end
+            if bi > 0 then
+                usedSlot[bi] = true
+                table.insert(pairs, { rec = r, slot = slotList[bi] })
+            end
+        end
+    end
+    for _, pr in ipairs(pairs) do
+        local rec, s, anchor = pr.rec, pr.slot.s, pr.slot.anchor
+            -- ALLE Top-6-Eggs (jede Groesse), Beste markiert:
             local label, col = nil, Color3.fromRGB(130, 255, 130)
             local isBest = RARE_NAMES[tostring(rec.AssetCategory)] == true
                 or rec.HasParasite == true
-            if isBest then
+            if true then
                 local sc = tonumber(rec.AssetScale) or 0
                 local cls = sc >= 3 and "XL" or sc >= 2 and "L"
                     or sc >= 1 and "M" or "S"
@@ -231,7 +255,7 @@ local function espTick()
                 end
                 label = string.format("%s|%s|x%.2f[%s]%s%s|%s",
                     tostring(rec.AssetCategory or "?"),
-                    tostring(biom or rec.AreaId or "?"), sc, cls,
+                    tostring(rec.AreaId or "?"), sc, cls,
                     rec.HasParasite and "|PARASIT" or "",
                     RARE_NAMES[tostring(rec.AssetCategory)] and "|BEST" or "",
                     dist)
@@ -266,11 +290,9 @@ local function espTick()
                 end)
             end
         end
-    end
     -- Tausch-Regel: neu wenn Labels da; leer nur bei leerem Snapshot
     -- (Lockout) oder 5x leer in Folge (Stale-Schutz, kein Toggle nötig):
-    local recCount = 0
-    for _ in pairs(want) do recCount = recCount + 1 end
+    local recCount = #pairs
     espStatus = "ESP: " .. n .. " Labels (" .. recCount .. " Top)"
     if n > 0 then
         espEmptyTicks = 0
