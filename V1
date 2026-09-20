@@ -25,8 +25,17 @@ local AREAS = { "Alle", "Forest", "Lake", "Desert", "Jungle", "Snow",
 
 local S = { -- Settings (UI-gesteuert)
     stealArea = "Alle", minScale = 0.0, parasiteOnly = false,
-    rareBoost = true, bestFilter = "Alle",
+    rareBoost = true, bestFilter = "Alle", espAreas = "Top 6",
+    walkSpeed = 50,
 }
+-- Top-Areas fuer ESP (spaete Biome = beste Base-Pets):
+local TOP_AREAS = {
+    volcano = true, abyssocean = true, prehistoric = true,
+    cosmic = true, cherryblossom = true, titantemple = true,
+}
+local function normArea(a)
+    return string.lower(string.gsub(tostring(a or ""), "%s+", ""))
+end
 
 -- ---------- Rayfield ----------
 local Rayfield
@@ -142,7 +151,7 @@ local function areaOk(rec)
 end
 
 -- ---------- Flags + Status ----------
-local flags = { steal = false, hatch = false, esp = false }
+local flags = { steal = false, hatch = false, esp = false, speed = false }
 local stealStatus = "bereit"
 
 -- ---------- ESP (BillboardGui, build-then-swap) ----------
@@ -179,11 +188,13 @@ local function espTick()
         if nest then rec = byNest[nest] end
         if not rec then rec = byUid[s.Name] end
         if rec then
-            -- ESP zeigt NUR Beste (Rare/Parasit), Rest nie:
+            -- ESP: nur Beste (Rare/Parasit) + nur Top-Areas, Rest nie:
             local label, col = nil, Color3.fromRGB(130, 255, 130)
             local isBest = RARE_NAMES[tostring(rec.AssetCategory)] == true
                 or rec.HasParasite == true
-            if isBest then
+            local areaOkEsp = S.espAreas ~= "Top 6"
+                or TOP_AREAS[normArea(rec.AreaId)] == true
+            if isBest and areaOkEsp then
                 local sc = tonumber(rec.AssetScale) or 0
                 local cls = sc >= 3 and "XL" or sc >= 2 and "L"
                     or sc >= 1 and "M" or "S"
@@ -230,16 +241,29 @@ local function espTick()
             end
         end
     end
-    -- erst JETZT alte weg, neue live (Fehl-Tick behaelt alte Labels):
-    if espGui then pcall(function() espGui:Destroy() end) end
-    espGui = g
+    -- nur tauschen wenn Labels gebaut ODER Snapshot leer (Lockout):
+    -- sonst alte behalten (Reset-sicher, kein Flackern):
+    local recCount = 0
+    for _ in pairs(byUid) do recCount = recCount + 1 end
+    if n > 0 or recCount == 0 then
+        if espGui then pcall(function() espGui:Destroy() end) end
+        espGui = g
+    end
 end
 local function espClear()
     if espGui then pcall(function() espGui:Destroy() end) end
     espGui = nil
 end
 
--- ---------- Hatch ----------
+-- ---------- Speed-Hack (WalkSpeed-Write + Restore) ----------
+local speedBackup = 16
+local function speedTick()
+    local c = lp.Character
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    if h then
+        pcall(function() h.WalkSpeed = S.walkSpeed end)
+    end
+end
 local function hatchTick()
     local me = tostring(lp.UserId)
     local ok, res = pcall(function() return R.Live:InvokeServer() end)
@@ -391,6 +415,36 @@ tabMain:CreateToggle({
     end,
 })
 local statusLabel = tabMain:CreateLabel("Status: bereit")
+tabMain:CreateToggle({
+    Name = "Speed-Hack",
+    CurrentValue = false,
+    Callback = function(v)
+        flags.speed = v
+        local c = lp.Character
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        if v then
+            if h then speedBackup = h.WalkSpeed end
+            task.spawn(function()
+                while flags.speed do
+                    pcall(speedTick)
+                    task.wait(0.5)
+                end
+                local h2 = lp.Character
+                    and lp.Character:FindFirstChildOfClass("Humanoid")
+                if h2 then pcall(function() h2.WalkSpeed = speedBackup end) end
+            end)
+        else
+            if h then pcall(function() h.WalkSpeed = speedBackup end) end
+        end
+    end,
+})
+tabMain:CreateSlider({
+    Name = "WalkSpeed",
+    Range = { 16, 250 },
+    Increment = 2,
+    CurrentValue = 50,
+    Callback = function(v) S.walkSpeed = v end,
+})
 task.spawn(function()
     while true do
         pcall(function() statusLabel:Set("Status: " .. stealStatus) end)
@@ -428,6 +482,15 @@ tabVis:CreateSlider({
     Increment = 1,
     CurrentValue = 0,
     Callback = function(v) S.minScale = v / 10 end,
+})
+tabVis:CreateDropdown({
+    Name = "ESP-Areas",
+    Options = { "Top 6", "Alle Areas" },
+    CurrentOption = { "Top 6" },
+    MultipleOptions = false,
+    Callback = function(v)
+        S.espAreas = typeof(v) == "table" and tostring(v[1]) or tostring(v)
+    end,
 })
 tabVis:CreateDropdown({
     Name = "Besten-Filter (Steal)",
