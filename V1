@@ -396,17 +396,7 @@ local function panelTargets()
     return out
 end
 local function gotoPos(pos, timeout)
-    -- 1) Instant-TP versuchen (wenn Server mitspielt, sofort da):
-    local r = hrp()
-    if r then
-        pcall(function() r.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0)) end)
-        task.wait(0.6)
-        local r2 = hrp()
-        if r2 and (r2.Position - pos).Magnitude < 12 then
-            return true, "TP"
-        end
-    end
-    -- 2) Fallback Tween (kleine Schritte, RigSync-sicherer):
+    -- NUR Tween (Instant-TP wird vom Server mit Tod bestraft!):
     if tweenTo(pos + Vector3.new(0, 2, 0), timeout or 30) then
         return true, "Tween"
     end
@@ -474,12 +464,34 @@ local function buildPanel()
         y = y + (h or 30) + 4
         return b
     end
-    row("Steal Panel (Tap = TP+Steal)", 26, nil,
+    row("Steal Panel (Tap = Tween+Steal)", 26, nil,
         Color3.fromRGB(160, 40, 40))
     panelRows = {}
     for i = 1, 8 do
         local idx = i
-        local b = row("#" .. i .. " ...", 30, function()
+        -- Zeile: Container mit Ei-Bild (links) + STEAL-Knopf:
+        local f = Instance.new("Frame")
+        f.Size = UDim2.new(0, 230, 0, 56)
+        f.Position = UDim2.new(1, -242, 0, y)
+        f.BackgroundColor3 = Color3.fromRGB(20, 20, 28)
+        f.BorderSizePixel = 0
+        f.Parent = g
+        local vp = Instance.new("ViewportFrame")
+        vp.Size = UDim2.new(0, 52, 0, 52)
+        vp.Position = UDim2.new(0, 2, 0, 2)
+        vp.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+        vp.BorderSizePixel = 0
+        vp.Parent = f
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, -60, 1, -4)
+        b.Position = UDim2.new(0, 58, 0, 2)
+        b.BackgroundColor3 = Color3.fromRGB(30, 120, 60)
+        b.TextColor3 = Color3.white
+        b.TextSize = 13
+        b.TextXAlignment = Enum.TextXAlignment.Left
+        b.Text = "#" .. i .. " ..."
+        b.Parent = f
+        b.MouseButton1Click:Connect(function()
             local t = panelTargetsNow[idx]
             if t then
                 stealStatus = "Panel: " .. tostring(t.rec.AssetCategory)
@@ -487,7 +499,8 @@ local function buildPanel()
                 stealStatus = (ok and "Panel: " or "Panel FAIL: ") .. msg
             end
         end)
-        panelRows[i] = b
+        panelRows[i] = { btn = b, vp = vp }
+        y = y + 60
     end
     row("Tween -", 26, function()
         tweenSpeed = math.max(50, tweenSpeed - 30)
@@ -498,23 +511,71 @@ local function buildPanel()
         if panelSpeedLbl then panelSpeedLbl.Text = " Tween: " .. tweenSpeed end
     end)
     panelSpeedLbl = row(" Tween: " .. tweenSpeed, 26, nil)
+    local function fillPreview(vp, slotModel)
+        for _, ch in ipairs(vp:GetChildren()) do
+            pcall(function() ch:Destroy() end)
+        end
+        if not slotModel then return end
+        pcall(function()
+            local wm = Instance.new("WorldModel")
+            wm.Parent = vp
+            local parts = {}
+            for _, d in ipairs(slotModel:GetDescendants()) do
+                if d:IsA("BasePart") and d.Name ~= "Hitbox" then
+                    local c = d:Clone()
+                    c.Anchored = true
+                    c.CanCollide = false
+                    c.Parent = wm
+                    table.insert(parts, c)
+                end
+            end
+            if #parts == 0 then return end
+            local cf = parts[1].CFrame
+            local cam = Instance.new("Camera")
+            cam.CFrame = CFrame.new(
+                cf.Position + Vector3.new(3.5, 2.5, 3.5), cf.Position)
+            cam.Parent = vp
+            vp.CurrentCamera = cam
+        end)
+    end
     local function refresh()
         local tg = panelTargets()
         panelTargetsNow = tg
         local r0 = hrp()
         local myPos = r0 and r0.Position or nil
+        -- Slot-Modelle fuer Vorschau (Position-Link):
+        local slots = workspace:FindFirstChild("AreaEggSlotsClient")
+        local slotList = {}
+        if slots then
+            for _, s in ipairs(slots:GetChildren()) do
+                local a = s:FindFirstChild("Hitbox")
+                    or s:FindFirstChildWhichIsA("BasePart")
+                if a then
+                    table.insert(slotList, { s = s, pos = a.Position })
+                end
+            end
+        end
         for i = 1, 8 do
-            local b = panelRows[i]
-            if not (b and b.Parent) then break end
+            local rowT = panelRows[i]
+            if not (rowT and rowT.btn and rowT.btn.Parent) then break end
             local t = tg[i]
             if t then
                 local dist = myPos and math.floor(
                     (myPos - t.rec.BottomCFrame.Position).Magnitude) .. "m" or "?"
-                b.Text = string.format(" #%d %s|%s %s", i,
-                    tostring(t.rec.AssetCategory or "?"),
+                rowT.btn.Text = string.format("#%d %s|%s\n%s STEAL!",
+                    i, tostring(t.rec.AssetCategory or "?"),
                     tostring(t.rec.AreaId or "?"), dist)
+                -- naechsten Slot fuers Bild:
+                local rp = t.rec.BottomCFrame.Position
+                local bi, bd = 0, 25
+                for j, sl in ipairs(slotList) do
+                    local d = (sl.pos - rp).Magnitude
+                    if d < bd then bi, bd = j, d end
+                end
+                fillPreview(rowT.vp, bi > 0 and slotList[bi].s or nil)
             else
-                b.Text = " #" .. i .. " ---"
+                rowT.btn.Text = "#" .. i .. " ---"
+                fillPreview(rowT.vp, nil)
             end
         end
     end
