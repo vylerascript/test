@@ -5,6 +5,11 @@ local lp = game.Players.LocalPlayer
 local RS = game:GetService("ReplicatedStorage")
 local MY_PLOT = "7"
 
+-- Kill-Switch: alte Instanzen (Re-Execute ohne Rejoin) stoppen ihre Loops:
+_G.SAE_GEN = ((_G.SAE_GEN or 0) + 1) % 100000
+local GEN = _G.SAE_GEN
+local function alive() return GEN == _G.SAE_GEN end
+
 local AREA_SCORE = {
     Forest = 1, Lake = 2, Desert = 3, Jungle = 4, Snow = 5,
     Volcano = 6, ["Abyss Ocean"] = 7, AbyssOcean = 7, Prehistoric = 8,
@@ -154,16 +159,37 @@ end
 local flags = { steal = false, hatch = false, esp = false, jump = false }
 local stealStatus = "bereit"
 
--- ---------- ESP (BillboardGui, build-then-swap) ----------
+-- ---------- ESP (BillboardGui, Top-3-pro-Area, stale-sicher) ----------
 local espGui = nil
+local espEmptyTicks = 0
+local function espScore(r)
+    local s = 0
+    if RARE_NAMES[tostring(r.AssetCategory)] then s = s + 20000 end
+    if r.HasParasite then s = s + 5000 end
+    return s
+end
 local function espTick()
     local recs = snap()
     if not recs then return end -- FEHLER: alte Labels behalten!
-    local byNest, byUid = {}, {}
+    -- pro Area: Top 3 nach Score (Parasit/Rare zuerst)
+    local perArea = {}
     for _, r in ipairs(recs) do
         if typeof(r) == "table" and r.State == "Slot" then
-            if r.NestId then byNest[tostring(r.NestId)] = r end
-            if r.Uid then byUid[tostring(r.Uid)] = r end
+            local a = tostring(r.AreaId or "?")
+            if S.espAreas ~= "Top 6" or TOP_AREAS[normArea(a)] then
+                perArea[a] = perArea[a] or {}
+                table.insert(perArea[a], r)
+            end
+        end
+    end
+    local want = {} -- Uid -> rec (Top 3 je Area)
+    for _, list in pairs(perArea) do
+        table.sort(list, function(x, y)
+            return espScore(x) > espScore(y)
+        end)
+        for i = 1, math.min(3, #list) do
+            if list[i].Uid then want[tostring(list[i].Uid)] = list[i] end
+            if list[i].NestId then want["N:" .. tostring(list[i].NestId)] = list[i] end
         end
     end
     local r0 = hrp()
@@ -185,16 +211,14 @@ local function espTick()
         -- Link: 1) :Slot_NNN-Suffix (Forest) 2) Hex-Name = Record-Uid (Rest)
         local biom, nest = string.match(s.Name, "([^:_]+):(Slot_%d+)$")
         local rec = nil
-        if nest then rec = byNest[nest] end
-        if not rec then rec = byUid[s.Name] end
+        if nest then rec = want["N:" .. nest] end
+        if not rec then rec = want[s.Name] end
         if rec then
-            -- ESP: nur Beste (Rare/Parasit) + nur Top-Areas, Rest nie:
+            -- Top-3-pro-Area (Beste zuerst), Rest nie:
             local label, col = nil, Color3.fromRGB(130, 255, 130)
             local isBest = RARE_NAMES[tostring(rec.AssetCategory)] == true
                 or rec.HasParasite == true
-            local areaOkEsp = S.espAreas ~= "Top 6"
-                or TOP_AREAS[normArea(rec.AreaId)] == true
-            if isBest and areaOkEsp then
+            if true then
                 local sc = tonumber(rec.AssetScale) or 0
                 local cls = sc >= 3 and "XL" or sc >= 2 and "L"
                     or sc >= 1 and "M" or "S"
@@ -241,13 +265,25 @@ local function espTick()
             end
         end
     end
-    -- nur tauschen wenn Labels gebaut ODER Snapshot leer (Lockout):
-    -- sonst alte behalten (Reset-sicher, kein Flackern):
+    -- Tausch-Regel: neu wenn Labels da; leer nur bei leerem Snapshot
+    -- (Lockout) oder 5x leer in Folge (Stale-Schutz, kein Toggle nötig):
     local recCount = 0
-    for _ in pairs(byUid) do recCount = recCount + 1 end
-    if n > 0 or recCount == 0 then
+    for _ in pairs(want) do recCount = recCount + 1 end
+    if n > 0 then
+        espEmptyTicks = 0
         if espGui then pcall(function() espGui:Destroy() end) end
         espGui = g
+    elseif recCount == 0 then
+        espEmptyTicks = 0
+        if espGui then pcall(function() espGui:Destroy() end) end
+        espGui = g
+    else
+        espEmptyTicks = espEmptyTicks + 1
+        if espEmptyTicks >= 5 then
+            espEmptyTicks = 0
+            if espGui then pcall(function() espGui:Destroy() end) end
+            espGui = g
+        end
     end
 end
 local function espClear()
@@ -381,7 +417,7 @@ tabMain:CreateToggle({
         flags.steal = v
         if v and ensureR() then
             task.spawn(function()
-                while flags.steal do
+                while flags.steal and alive() do
                     pcall(stealTick)
                     task.wait(1.5)
                 end
@@ -396,7 +432,7 @@ tabMain:CreateToggle({
         flags.hatch = v
         if v and ensureR() then
             task.spawn(function()
-                while flags.hatch do
+                while flags.hatch and alive() do
                     pcall(hatchTick)
                     task.wait(30)
                 end
@@ -440,7 +476,7 @@ tabMain:CreateSlider({
     Callback = function(v) S.jumpPower = v end,
 })
 task.spawn(function()
-    while true do
+    while alive() do
         pcall(function() statusLabel:Set("Status: " .. stealStatus) end)
         task.wait(1)
     end
@@ -454,7 +490,7 @@ tabVis:CreateToggle({
         flags.esp = v
         if v and ensureR() then
             task.spawn(function()
-                while flags.esp do
+                while flags.esp and alive() do
                     pcall(espTick)
                     task.wait(3)
                 end
