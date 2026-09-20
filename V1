@@ -214,11 +214,11 @@ local function espTick()
         if nest then rec = want["N:" .. nest] end
         if not rec then rec = want[s.Name] end
         if rec then
-            -- Top-3-pro-Area (Beste zuerst), Rest nie:
+            -- Top-3-pro-Area, davon NUR Beste (Rest nie):
             local label, col = nil, Color3.fromRGB(130, 255, 130)
             local isBest = RARE_NAMES[tostring(rec.AssetCategory)] == true
                 or rec.HasParasite == true
-            if true then
+            if isBest then
                 local sc = tonumber(rec.AssetScale) or 0
                 local cls = sc >= 3 and "XL" or sc >= 2 and "L"
                     or sc >= 1 and "M" or "S"
