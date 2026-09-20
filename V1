@@ -184,7 +184,6 @@ local function espTick()
             local isBest = RARE_NAMES[tostring(rec.AssetCategory)] == true
                 or rec.HasParasite == true
             if isBest then
-            do
                 local sc = tonumber(rec.AssetScale) or 0
                 local cls = sc >= 3 and "XL" or sc >= 2 and "L"
                     or sc >= 1 and "M" or "S"
