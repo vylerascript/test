@@ -238,9 +238,21 @@ local function espTick()
             end
         end
     end
+    -- pro Top-6-Area NUR das beste (Rare/Parasit zuerst):
+    local bestPerArea = {}
     for _, pr in ipairs(pairs) do
+        local a = tostring(pr.rec.AreaId or "?")
+        local sc = 0
+        if RARE_NAMES[tostring(pr.rec.AssetCategory)] then sc = sc + 20000 end
+        if pr.rec.HasParasite then sc = sc + 5000 end
+        if not bestPerArea[a] or sc > bestPerArea[a].sc then
+            bestPerArea[a] = { pr = pr, sc = sc }
+        end
+    end
+    for _, bp in pairs(bestPerArea) do
+        local pr = bp.pr
         local rec, s, anchor = pr.rec, pr.slot.s, pr.slot.anchor
-            -- ALLE Top-6-Eggs (jede Groesse), Beste markiert:
+            -- Bestes Ei der Area, Beste markiert:
             local label, col = nil, Color3.fromRGB(130, 255, 130)
             local isBest = RARE_NAMES[tostring(rec.AssetCategory)] == true
                 or rec.HasParasite == true
