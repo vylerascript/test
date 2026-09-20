@@ -26,7 +26,6 @@ local AREAS = { "Alle", "Forest", "Lake", "Desert", "Jungle", "Snow",
 local S = { -- Settings (UI-gesteuert)
     stealArea = "Alle", minScale = 0.0, parasiteOnly = false,
     rareBoost = true, bestFilter = "Alle", espAreas = "Top 6",
-    walkSpeed = 50,
 }
 -- Top-Areas fuer ESP (spaete Biome = beste Base-Pets):
 local TOP_AREAS = {
@@ -151,7 +150,7 @@ local function areaOk(rec)
 end
 
 -- ---------- Flags + Status ----------
-local flags = { steal = false, hatch = false, esp = false, speed = false }
+local flags = { steal = false, hatch = false, esp = false }
 local stealStatus = "bereit"
 
 -- ---------- ESP (BillboardGui, build-then-swap) ----------
@@ -253,16 +252,6 @@ end
 local function espClear()
     if espGui then pcall(function() espGui:Destroy() end) end
     espGui = nil
-end
-
--- ---------- Speed-Hack (WalkSpeed-Write + Restore) ----------
-local speedBackup = 16
-local function speedTick()
-    local c = lp.Character
-    local h = c and c:FindFirstChildOfClass("Humanoid")
-    if h then
-        pcall(function() h.WalkSpeed = S.walkSpeed end)
-    end
 end
 local function hatchTick()
     local me = tostring(lp.UserId)
@@ -415,36 +404,7 @@ tabMain:CreateToggle({
     end,
 })
 local statusLabel = tabMain:CreateLabel("Status: bereit")
-tabMain:CreateToggle({
-    Name = "Speed-Hack",
-    CurrentValue = false,
-    Callback = function(v)
-        flags.speed = v
-        local c = lp.Character
-        local h = c and c:FindFirstChildOfClass("Humanoid")
-        if v then
-            if h then speedBackup = h.WalkSpeed end
-            task.spawn(function()
-                while flags.speed do
-                    pcall(speedTick)
-                    task.wait(0.5)
-                end
-                local h2 = lp.Character
-                    and lp.Character:FindFirstChildOfClass("Humanoid")
-                if h2 then pcall(function() h2.WalkSpeed = speedBackup end) end
-            end)
-        else
-            if h then pcall(function() h.WalkSpeed = speedBackup end) end
-        end
-    end,
-})
-tabMain:CreateSlider({
-    Name = "WalkSpeed",
-    Range = { 16, 250 },
-    Increment = 2,
-    CurrentValue = 50,
-    Callback = function(v) S.walkSpeed = v end,
-})
+tabMain:CreateLabel("Speed = serverseitig (Treadmill). Kein Hack.")
 task.spawn(function()
     while true do
         pcall(function() statusLabel:Set("Status: " .. stealStatus) end)
