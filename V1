@@ -26,6 +26,7 @@ local AREAS = { "Alle", "Forest", "Lake", "Desert", "Jungle", "Snow",
 local S = { -- Settings (UI-gesteuert)
     stealArea = "Alle", minScale = 0.0, parasiteOnly = false,
     rareBoost = true, bestFilter = "Beste (selten)", espAreas = "Top 6",
+    jumpPower = 120,
 }
 -- Top-Areas fuer ESP (spaete Biome = beste Base-Pets):
 local TOP_AREAS = {
@@ -150,7 +151,7 @@ local function areaOk(rec)
 end
 
 -- ---------- Flags + Status ----------
-local flags = { steal = false, hatch = false, esp = false }
+local flags = { steal = false, hatch = false, esp = false, jump = false }
 local stealStatus = "bereit"
 
 -- ---------- ESP (BillboardGui, build-then-swap) ----------
@@ -405,6 +406,39 @@ tabMain:CreateToggle({
 })
 local statusLabel = tabMain:CreateLabel("Status: bereit")
 tabMain:CreateLabel("Speed = serverseitig (Treadmill). Kein Hack.")
+tabMain:CreateToggle({
+    Name = "Jump-Hack",
+    CurrentValue = false,
+    Callback = function(v)
+        flags.jump = v
+        if v then
+            task.spawn(function()
+                while flags.jump do
+                    local h = lp.Character
+                        and lp.Character:FindFirstChildOfClass("Humanoid")
+                    if h then
+                        pcall(function() h.JumpPower = S.jumpPower end)
+                    end
+                    task.wait(1)
+                end
+                local h2 = lp.Character
+                    and lp.Character:FindFirstChildOfClass("Humanoid")
+                if h2 then pcall(function() h2.JumpPower = 50 end) end
+            end)
+        else
+            local h = lp.Character
+                and lp.Character:FindFirstChildOfClass("Humanoid")
+            if h then pcall(function() h.JumpPower = 50 end) end
+        end
+    end,
+})
+tabMain:CreateSlider({
+    Name = "JumpPower",
+    Range = { 50, 300 },
+    Increment = 5,
+    CurrentValue = 120,
+    Callback = function(v) S.jumpPower = v end,
+})
 task.spawn(function()
     while true do
         pcall(function() statusLabel:Set("Status: " .. stealStatus) end)
