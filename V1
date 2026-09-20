@@ -1,0 +1,469 @@
+-- StealAnEgg v4 (Rayfield-UI). Plot 7. Repo ersetzen, ?v=12 laden.
+-- Verkauf: Luarmor-Loader davor (Key-Check dort), dieses Script dahinter.
+
+local lp = game.Players.LocalPlayer
+local RS = game:GetService("ReplicatedStorage")
+local MY_PLOT = "7"
+
+local AREA_SCORE = {
+    Forest = 1, Lake = 2, Desert = 3, Jungle = 4, Snow = 5,
+    Volcano = 6, ["Abyss Ocean"] = 7, AbyssOcean = 7, Prehistoric = 8,
+    Cosmic = 9, ["Cherry Blossom"] = 10, CherryBlossom = 10,
+    ["Titan Temple"] = 11, TitanTemple = 11,
+    ["Angels vs Demons"] = 12, AngelsVsDemons = 12,
+    ["Light Dark"] = 12, LightDark = 12,
+}
+local RARE_NAMES = {
+    ["La Vacca Saturno Saturnita"] = true, ["Trulimero Trulicina"] = true,
+    ["Orangutini Ananassini"] = true, ["Brr Brr Patapim"] = true,
+    ["Chillin Chilli"] = true,
+    ["Tob Tobi Tob Tob"] = true, ["Tralaledon"] = true,
+}
+local AREAS = { "Alle", "Forest", "Lake", "Desert", "Jungle", "Snow",
+    "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
+    "Cherry Blossom", "Titan Temple", "Light Dark" }
+
+local S = { -- Settings (UI-gesteuert)
+    stealArea = "Alle", minScale = 0.0, parasiteOnly = false,
+    rareBoost = true, bestFilter = "Alle",
+}
+
+-- ---------- Rayfield ----------
+local Rayfield
+do
+    local ok, lib = pcall(function()
+        return loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+    end)
+    if ok and lib then Rayfield = lib end
+end
+if not Rayfield then
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "SAE v4", Text = "UI-Lib fail! Netz pruefen.",
+            Duration = 6,
+        })
+    end)
+    return
+end
+
+-- ---------- Remotes (lazy) ----------
+local R = nil
+local function ensureR()
+    if R then return true end
+    R = {}
+    local ok = pcall(function()
+        local N = RS.Packages.Networking
+        R.Snap   = N["RF/EggWorld/AskFieldEggSnapshot"]
+        R.Live   = N["RF/EggWorld/AskLiveSnapshot"]
+        R.Place  = N["RF/EggWorld/AskPlaceEgg"]
+        R.Hatch  = N["RF/EggWorld/AskHatch"]
+        R.Finish = N["RF/EggWorld/AskFinishHatch"]
+        R.WearBest = N["Haul/WearBest"]
+        R.CodexAll = N["Codex/AskRedeemAll"]
+    end)
+    return ok and R.Snap ~= nil
+end
+
+-- ---------- Helfer ----------
+local function hrp()
+    local c = lp.Character
+    return c and c:FindFirstChild("HumanoidRootPart") or nil
+end
+local function moveTo(pos, timeout)
+    local c = lp.Character
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    local r = hrp()
+    if not (h and r) then return false end
+    h:MoveTo(pos)
+    local t0 = os.clock()
+    while os.clock() - t0 < (timeout or 20) do
+        if (r.Position - pos).Magnitude < 6 then return true end
+        task.wait(0.3)
+    end
+    return false
+end
+local function equippedUid()
+    local c = lp.Character
+    if c then
+        for _, t in ipairs(c:GetChildren()) do
+            if t:IsA("Tool") and t:GetAttribute("ItemType") == "AssetEgg" then
+                return t:GetAttribute("UID")
+            end
+        end
+    end
+    return nil
+end
+local function plotSlots()
+    local out = {}
+    local plots = workspace:FindFirstChild("Plots")
+    local plot = plots and plots:FindFirstChild(MY_PLOT)
+    local pen = plot and plot:FindFirstChild("ToUpdate")
+    pen = pen and pen:FindFirstChild("StarterPen")
+    if pen then
+        for _, n in ipairs({"Prompt1", "Prompt2", "Prompt3"}) do
+            local p = pen:FindFirstChild(n)
+            if p and p:IsA("BasePart") then
+                table.insert(out, p.CFrame)
+            end
+        end
+    end
+    return out
+end
+local function snap()
+    local ok, res = pcall(function() return R.Snap:InvokeServer() end)
+    if ok and typeof(res) == "table"
+        and typeof(res.Records) == "table" then
+        return res.Records
+    end
+    return nil
+end
+-- Besten-Filter (nur Steal, ESP zeigt weiter alles):
+local function bestOk(rec)
+    local f = S.bestFilter
+    if f == "Alle" then return true end
+    local sc = tonumber(rec.AssetScale) or 0
+    if f == "Riesen (x2+)" then return sc >= 2 end
+    if f == "XL (x3+)" then return sc >= 3 end
+    if f == "Rare Namen" then
+        return RARE_NAMES[tostring(rec.AssetCategory)] == true
+    end
+    if f == "Beste (selten)" then
+        return RARE_NAMES[tostring(rec.AssetCategory)] == true
+            or rec.HasParasite == true
+    end
+    if f == "Parasiten" then return rec.HasParasite == true end
+    return true
+end
+local function areaOk(rec)
+    if S.stealArea == "Alle" then return true end
+    local a = tostring(rec.AreaId or "")
+    return a == S.stealArea
+        or string.gsub(a, "%s+", "") == string.gsub(S.stealArea, "%s+", "")
+end
+
+-- ---------- Flags + Status ----------
+local flags = { steal = false, hatch = false, esp = false }
+local stealStatus = "bereit"
+
+-- ---------- ESP (BillboardGui, build-then-swap) ----------
+local espGui = nil
+local function espTick()
+    local recs = snap()
+    if not recs then return end -- FEHLER: alte Labels behalten!
+    local byNest, byUid = {}, {}
+    for _, r in ipairs(recs) do
+        if typeof(r) == "table" and r.State == "Slot" then
+            if r.NestId then byNest[tostring(r.NestId)] = r end
+            if r.Uid then byUid[tostring(r.Uid)] = r end
+        end
+    end
+    local r0 = hrp()
+    local myPos = r0 and r0.Position or nil
+    local slots = workspace:FindFirstChild("AreaEggSlotsClient")
+    if not slots then return end
+    local parent = nil
+    pcall(function()
+        if typeof(gethui) == "function" then parent = gethui() end
+    end)
+    if not parent then parent = lp.PlayerGui end
+    -- neu bauen, erst bei Erfolg tauschen:
+    local g = Instance.new("ScreenGui")
+    g.Name = "SAEESP"
+    local okBuild = pcall(function() g.Parent = parent end)
+    if not okBuild then return end
+    local n = 0
+    for _, s in ipairs(slots:GetChildren()) do
+        -- Link: 1) :Slot_NNN-Suffix (Forest) 2) Hex-Name = Record-Uid (Rest)
+        local biom, nest = string.match(s.Name, "([^:_]+):(Slot_%d+)$")
+        local rec = nil
+        if nest then rec = byNest[nest] end
+        if not rec then rec = byUid[s.Name] end
+        if rec then
+            -- ESP zeigt NUR Beste (Rare/Parasit), Rest nie:
+            local label, col = nil, Color3.fromRGB(130, 255, 130)
+            local isBest = RARE_NAMES[tostring(rec.AssetCategory)] == true
+                or rec.HasParasite == true
+            if isBest then
+            do
+                local sc = tonumber(rec.AssetScale) or 0
+                local cls = sc >= 3 and "XL" or sc >= 2 and "L"
+                    or sc >= 1 and "M" or "S"
+                local dist = "?"
+                local hb = s:FindFirstChild("Hitbox")
+                if myPos and hb then
+                    dist = math.floor((myPos - hb.Position).Magnitude) .. "m"
+                end
+                label = string.format("%s|%s|x%.2f[%s]%s%s|%s",
+                    tostring(rec.AssetCategory or "?"),
+                    tostring(biom or rec.AreaId or "?"), sc, cls,
+                    rec.HasParasite and "|PARASIT" or "",
+                    RARE_NAMES[tostring(rec.AssetCategory)] and "|BEST" or "",
+                    dist)
+                if rec.HasParasite then
+                    col = Color3.fromRGB(220, 130, 255)
+                elseif RARE_NAMES[tostring(rec.AssetCategory)] then
+                    col = Color3.fromRGB(120, 200, 255) -- Beste blau
+                elseif sc >= 2 then
+                    col = Color3.fromRGB(255, 210, 80) -- Riesen gold
+                end
+            end
+            local anchor = s:FindFirstChild("Hitbox")
+                or s:FindFirstChildWhichIsA("BasePart")
+            if label and anchor then
+                n = n + 1
+                if n > 60 then break end
+                pcall(function()
+                    local bb = Instance.new("BillboardGui")
+                    bb.Size = UDim2.new(0, 200, 0, 26)
+                    bb.StudsOffset = Vector3.new(0, 4, 0)
+                    bb.AlwaysOnTop = true
+                    bb.Adornee = anchor
+                    local tl = Instance.new("TextLabel")
+                    tl.Size = UDim2.new(1, 0, 1, 0)
+                    tl.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                    tl.BackgroundTransparency = 0.3
+                    tl.TextColor3 = col
+                    tl.TextSize = 13
+                    tl.Text = label
+                    tl.Parent = bb
+                    bb.Parent = g
+                end)
+            end
+        end
+    end
+    -- erst JETZT alte weg, neue live (Fehl-Tick behaelt alte Labels):
+    if espGui then pcall(function() espGui:Destroy() end) end
+    espGui = g
+end
+local function espClear()
+    if espGui then pcall(function() espGui:Destroy() end) end
+    espGui = nil
+end
+
+-- ---------- Hatch ----------
+local function hatchTick()
+    local me = tostring(lp.UserId)
+    local ok, res = pcall(function() return R.Live:InvokeServer() end)
+    if ok and typeof(res) == "table" then
+        for _, grp in pairs(res) do
+            if typeof(grp) == "table" and tostring(grp.OwnerUserId) == me
+                and typeof(grp.Records) == "table" then
+                for k in pairs(grp.Records) do
+                    local key = tostring(k)
+                    local okH, rH = pcall(function()
+                        return R.Hatch:InvokeServer(key)
+                    end)
+                    if okH and rH then
+                        pcall(function() return R.Finish:InvokeServer(key) end)
+                    end
+                    task.wait(0.3)
+                end
+            end
+        end
+    end
+    pcall(function() return R.WearBest:InvokeServer() end)
+    pcall(function() return R.CodexAll:InvokeServer() end)
+end
+
+-- ---------- Steal ----------
+local function deliverEquipped()
+    local uid = equippedUid()
+    if uid then
+        for _, cf in ipairs(plotSlots()) do
+            pcall(function()
+                return R.Place:InvokeServer({ Uid = uid, LocalCFrame = cf })
+            end)
+            task.wait(1)
+            if not equippedUid() then break end
+        end
+    end
+end
+local function stealTick()
+    if equippedUid() then
+        stealStatus = "liefere ab..."
+        deliverEquipped()
+        return
+    end
+    stealStatus = "suche Egg..."
+    local recs = snap()
+    if not recs then stealStatus = "kein Snapshot!" return end
+    local freeN, totalN = 0, 0
+    local best, bestS = nil, -1
+    for _, r in ipairs(recs) do
+        if typeof(r) == "table" then
+            totalN = totalN + 1
+            if r.State == "Slot" then
+                freeN = freeN + 1
+                if r.BottomCFrame and typeof(r.BottomCFrame) == "CFrame"
+                    and areaOk(r)
+                    and bestOk(r)
+                    and (tonumber(r.AssetScale) or 0) >= S.minScale
+                    and (not S.parasiteOnly or r.HasParasite) then
+                    -- Score OHNE Groesse: Area + Seltenheit (Beste = selten)
+                    local s = (AREA_SCORE[tostring(r.AreaId)] or 0) * 1000
+                    if S.rareBoost and RARE_NAMES[tostring(r.AssetCategory)] then
+                        s = s + 20000
+                    end
+                    if r.HasParasite then s = s + 5000 end
+                    if s > bestS then best, bestS = r, s end
+                end
+            end
+        end
+    end
+    if not best then
+        stealStatus = "frei " .. freeN .. "/" .. totalN .. " Filter!"
+        return
+    end
+    local pos = best.BottomCFrame.Position
+    local r0 = hrp()
+    local d0 = r0 and math.floor((r0.Position - pos).Magnitude) or -1
+    stealStatus = "laufe " .. d0 .. "m " .. tostring(best.AssetCategory)
+    if not moveTo(pos + Vector3.new(0, 2, 0), 25) then
+        stealStatus = "Weg blockiert!"
+        return
+    end
+    stealStatus = "nehme Egg..."
+    local r1 = hrp()
+    if not r1 then return end
+    local bp, bd = nil, 1e9
+    for _, c in ipairs(workspace:GetChildren()) do
+        if c.Name == "SmartPromptPart" and c:IsA("BasePart") then
+            local p = c:FindFirstChildOfClass("ProximityPrompt")
+            if p and p.Enabled then
+                local d = (r1.Position - c.Position).Magnitude
+                if d < bd then bp, bd = p, d end
+            end
+        end
+    end
+    if not (bp and bd <= 7) then
+        stealStatus = "Prompt " .. math.floor(bd) .. "m weg!"
+        return
+    end
+    pcall(function() fireproximityprompt(bp) end)
+    task.wait(1)
+    if equippedUid() then
+        stealStatus = "Egg! -> Plot " .. MY_PLOT
+    else
+        stealStatus = "Pickup FAIL"
+        return
+    end
+    deliverEquipped()
+    stealStatus = "fertig!"
+end
+
+-- ---------- Window ----------
+local win = Rayfield:CreateWindow({
+    Name = "StealAnEgg v5",
+    LoadingTitle = "StealAnEgg",
+    LoadingSubtitle = "Plot " .. MY_PLOT,
+    ConfigurationSaving = { Enabled = false },
+    KeySystem = false,
+})
+
+local tabMain = win:CreateTab("Main", nil)
+tabMain:CreateToggle({
+    Name = "Auto-Steal",
+    CurrentValue = false,
+    Callback = function(v)
+        flags.steal = v
+        if v and ensureR() then
+            task.spawn(function()
+                while flags.steal do
+                    pcall(stealTick)
+                    task.wait(1.5)
+                end
+            end)
+        end
+    end,
+})
+tabMain:CreateToggle({
+    Name = "Auto-Hatch (+EquipBest+Claim)",
+    CurrentValue = false,
+    Callback = function(v)
+        flags.hatch = v
+        if v and ensureR() then
+            task.spawn(function()
+                while flags.hatch do
+                    pcall(hatchTick)
+                    task.wait(30)
+                end
+            end)
+        end
+    end,
+})
+local statusLabel = tabMain:CreateLabel("Status: bereit")
+task.spawn(function()
+    while true do
+        pcall(function() statusLabel:Set("Status: " .. stealStatus) end)
+        task.wait(1)
+    end
+end)
+
+local tabVis = win:CreateTab("Visuals", nil)
+tabVis:CreateToggle({
+    Name = "Egg-ESP",
+    CurrentValue = false,
+    Callback = function(v)
+        flags.esp = v
+        if v and ensureR() then
+            task.spawn(function()
+                while flags.esp do
+                    pcall(espTick)
+                    task.wait(3)
+                end
+                espClear()
+            end)
+        else
+            espClear()
+        end
+    end,
+})
+tabVis:CreateToggle({
+    Name = "Nur Parasiten",
+    CurrentValue = false,
+    Callback = function(v) S.parasiteOnly = v end,
+})
+tabVis:CreateSlider({
+    Name = "Min-Scale",
+    Range = { 0, 30 },
+    Increment = 1,
+    CurrentValue = 0,
+    Callback = function(v) S.minScale = v / 10 end,
+})
+tabVis:CreateDropdown({
+    Name = "Besten-Filter (Steal)",
+    Options = { "Alle", "Beste (selten)", "Riesen (x2+)", "XL (x3+)", "Rare Namen", "Parasiten" },
+    CurrentOption = { "Alle" },
+    MultipleOptions = false,
+    Callback = function(v)
+        S.bestFilter = typeof(v) == "table" and tostring(v[1]) or tostring(v)
+    end,
+})
+tabVis:CreateDropdown({
+    Name = "Steal-Area",
+    Options = AREAS,
+    CurrentOption = { "Alle" },
+    MultipleOptions = false,
+    Callback = function(v)
+        S.stealArea = typeof(v) == "table" and tostring(v[1]) or tostring(v)
+    end,
+})
+
+local tabKat = win:CreateTab("Katalog", nil)
+tabKat:CreateLabel("Forest: Chicken, Dog, Lark, Mire Fox, Owl, Raccoon")
+tabKat:CreateLabel("Lake: Duckling, Catfish, Frog, Turtle, Swan, Axolotl")
+tabKat:CreateLabel("Lake2: Trulimero*")
+tabKat:CreateLabel("Desert: SandSpider, Jerboa, Fennec, Rattle, Camel, Tob*")
+tabKat:CreateLabel("Desert2: Deathstalker")
+tabKat:CreateLabel("Jungle: Toucan, Chimp, Gorilla, Tiger, Croco, Spider")
+tabKat:CreateLabel("Jungle2: Orangutini*")
+tabKat:CreateLabel("Snow: Walrus, Penguin, PolarBear, Sabertooth")
+tabKat:CreateLabel("Snow2: Mammoth, Col.Mammoth")
+tabKat:CreateLabel("Volcano: Lava Iguana, frog, Chilli*, Ash Gecko, Bull")
+tabKat:CreateLabel("Abyss: Swordfish, Parrotfish, Thresher, Orca")
+tabKat:CreateLabel("Prehistoric: Dodo, Ptero, Ankylo, Tralaledon*, Bronto")
+tabKat:CreateLabel("Cosmic: Gecko, La Vacca*, Centapede, Cyclops, AlienBoss")
+tabKat:CreateLabel("Cherry: Salamander, Crane, Koi, Stag, SnowyOwl")
+tabKat:CreateLabel("Titan: Kaiju Spider, Crab, Blade Head, Mantis")
+tabKat:CreateLabel("LightDark: Flame, Toro, Imp, Hound, Gargoyle, Lamb, Dove")
+tabKat:CreateLabel("* = selten (Steal-Boost)")
