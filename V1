@@ -171,14 +171,13 @@ end
 local function espTick()
     local recs = snap()
     if not recs then return end -- FEHLER: alte Labels behalten!
-    -- pro Area: Top 3 nach Score (Parasit/Rare zuerst)
-    -- Alles ausser "Alle Areas" = Top-6-Modus (ausfallsicher):
-    local top6Only = tostring(S.espAreas or "Top 6") ~= "Alle Areas"
+    -- pro Area (NUR Top 6, fest): Top 3 nach Score (Parasit/Rare zuerst,
+    -- Groesse zaehlt NIE):
     local perArea = {}
     for _, r in ipairs(recs) do
         if typeof(r) == "table" and r.State == "Slot" then
             local a = tostring(r.AreaId or "?")
-            if (not top6Only) or TOP_AREAS[normArea(a)] then
+            if TOP_AREAS[normArea(a)] then
                 perArea[a] = perArea[a] or {}
                 table.insert(perArea[a], r)
             end
@@ -515,15 +514,7 @@ tabVis:CreateSlider({
     CurrentValue = 0,
     Callback = function(v) S.minScale = v / 10 end,
 })
-tabVis:CreateDropdown({
-    Name = "ESP-Areas",
-    Options = { "Top 6", "Alle Areas" },
-    CurrentOption = { "Top 6" },
-    MultipleOptions = false,
-    Callback = function(v)
-        S.espAreas = typeof(v) == "table" and tostring(v[1]) or tostring(v)
-    end,
-})
+tabVis:CreateLabel("ESP: Top 6 + Beste (fest)")
 tabVis:CreateLabel("Steal-Filter: Beste (selten) [fest]")
 tabVis:CreateDropdown({
     Name = "Steal-Area",
