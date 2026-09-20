@@ -27,6 +27,12 @@ local RARE_NAMES = {
 local AREAS = { "Alle", "Forest", "Lake", "Desert", "Jungle", "Snow",
     "Volcano", "Abyss Ocean", "Prehistoric", "Cosmic",
     "Cherry Blossom", "Titan Temple", "Light Dark" }
+-- Trim-toleranter Rare-Check (Kategorien evtl. mit Leerzeichen):
+local function isRare(cat)
+    local c = tostring(cat or "")
+    c = string.gsub(c, "^%s*(.-)%s*$", "%1")
+    return RARE_NAMES[c] == true
+end
 
 local S = { -- Settings (UI-gesteuert)
     stealArea = "Alle", minScale = 0.0, parasiteOnly = false,
@@ -139,10 +145,10 @@ local function bestOk(rec)
     if f == "Riesen (x2+)" then return sc >= 2 end
     if f == "XL (x3+)" then return sc >= 3 end
     if f == "Rare Namen" then
-        return RARE_NAMES[tostring(rec.AssetCategory)] == true
+        return isRare(rec.AssetCategory)
     end
     if f == "Beste (selten)" then
-        return RARE_NAMES[tostring(rec.AssetCategory)] == true
+        return isRare(rec.AssetCategory)
             or rec.HasParasite == true
     end
     if f == "Event Eggs" then return rec.HasParasite == true end
@@ -165,7 +171,7 @@ local espGui = nil
 local espEmptyTicks = 0
 local function espScore(r)
     local s = 0
-    if RARE_NAMES[tostring(r.AssetCategory)] then s = s + 20000 end
+    if isRare(r.AssetCategory) then s = s + 20000 end
     if r.HasParasite then s = s + 5000 end
     return s
 end
@@ -244,7 +250,7 @@ local function espTick()
     for _, pr in ipairs(matchList) do
         local a = tostring(pr.rec.AreaId or "?")
         local sc = 0
-        if RARE_NAMES[tostring(pr.rec.AssetCategory)] then sc = sc + 20000 end
+        if isRare(pr.rec.AssetCategory) then sc = sc + 20000 end
         if pr.rec.HasParasite then sc = sc + 5000 end
         if sc > 0 and (not bestPerArea[a] or sc > bestPerArea[a].sc) then
             bestPerArea[a] = { pr = pr, sc = sc }
@@ -255,7 +261,7 @@ local function espTick()
         local rec, s, anchor = pr.rec, pr.slot.s, pr.slot.anchor
             -- Bestes Ei der Area, Beste markiert:
             local label, col = nil, Color3.fromRGB(130, 255, 130)
-            local isBest = RARE_NAMES[tostring(rec.AssetCategory)] == true
+            local isBest = isRare(rec.AssetCategory)
                 or rec.HasParasite == true
             if true then
                 local sc = tonumber(rec.AssetScale) or 0
@@ -270,11 +276,11 @@ local function espTick()
                     tostring(rec.AssetCategory or "?"),
                     tostring(rec.AreaId or "?"), sc, cls,
                     rec.HasParasite and "|EVENT" or "",
-                    RARE_NAMES[tostring(rec.AssetCategory)] and "|BEST" or "",
+                    isRare(rec.AssetCategory) and "|BEST" or "",
                     dist)
                 if rec.HasParasite then
                     col = Color3.fromRGB(220, 130, 255)
-                elseif RARE_NAMES[tostring(rec.AssetCategory)] then
+                elseif isRare(rec.AssetCategory) then
                     col = Color3.fromRGB(120, 200, 255) -- Beste blau
                 elseif sc >= 2 then
                     col = Color3.fromRGB(255, 210, 80) -- Riesen gold
@@ -388,7 +394,7 @@ local function stealTick()
                     and (not S.parasiteOnly or r.HasParasite) then
                     -- Score OHNE Groesse: Area + Seltenheit (Beste = selten)
                     local s = (AREA_SCORE[tostring(r.AreaId)] or 0) * 1000
-                    if S.rareBoost and RARE_NAMES[tostring(r.AssetCategory)] then
+                    if S.rareBoost and isRare(r.AssetCategory) then
                         s = s + 20000
                     end
                     if r.HasParasite then s = s + 5000 end
