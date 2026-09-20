@@ -158,6 +158,7 @@ end
 -- ---------- Flags + Status ----------
 local flags = { steal = false, hatch = false, esp = false, jump = false }
 local stealStatus = "bereit"
+local espStatus = "ESP: aus"
 
 -- ---------- ESP (BillboardGui, Top-3-pro-Area, stale-sicher) ----------
 local espGui = nil
@@ -270,6 +271,7 @@ local function espTick()
     -- (Lockout) oder 5x leer in Folge (Stale-Schutz, kein Toggle nötig):
     local recCount = 0
     for _ in pairs(want) do recCount = recCount + 1 end
+    espStatus = "ESP: " .. n .. " Labels (" .. recCount .. " Top)"
     if n > 0 then
         espEmptyTicks = 0
         if espGui then pcall(function() espGui:Destroy() end) end
@@ -478,7 +480,9 @@ tabMain:CreateSlider({
 })
 task.spawn(function()
     while alive() do
-        pcall(function() statusLabel:Set("Status: " .. stealStatus) end)
+        pcall(function()
+            statusLabel:Set("Status: " .. stealStatus .. " | " .. espStatus)
+        end)
         task.wait(1)
     end
 end)
