@@ -145,7 +145,7 @@ local function bestOk(rec)
         return RARE_NAMES[tostring(rec.AssetCategory)] == true
             or rec.HasParasite == true
     end
-    if f == "Parasiten" then return rec.HasParasite == true end
+    if f == "Event Eggs" then return rec.HasParasite == true end
     return true
 end
 local function areaOk(rec)
@@ -219,7 +219,7 @@ local function espTick()
     -- Records per POSITION zuordnen (naechster freier Slot < 25m):
     -- Namen sind je Area anders (Suffix vs. Hex), Position luegt nie.
     local usedSlot = {}
-    local pairs = {}
+    local matchList = {}
     for _, r in ipairs(recs) do
         if typeof(r) == "table" and r.State == "Slot"
             and r.BottomCFrame and typeof(r.BottomCFrame) == "CFrame"
@@ -234,13 +234,13 @@ local function espTick()
             end
             if bi > 0 then
                 usedSlot[bi] = true
-                table.insert(pairs, { rec = r, slot = slotList[bi] })
+                table.insert(matchList, { rec = r, slot = slotList[bi] })
             end
         end
     end
     -- pro Top-6-Area NUR das beste (Rare/Parasit zuerst):
     local bestPerArea = {}
-    for _, pr in ipairs(pairs) do
+    for _, pr in ipairs(matchList) do
         local a = tostring(pr.rec.AreaId or "?")
         local sc = 0
         if RARE_NAMES[tostring(pr.rec.AssetCategory)] then sc = sc + 20000 end
@@ -268,7 +268,7 @@ local function espTick()
                 label = string.format("%s|%s|x%.2f[%s]%s%s|%s",
                     tostring(rec.AssetCategory or "?"),
                     tostring(rec.AreaId or "?"), sc, cls,
-                    rec.HasParasite and "|PARASIT" or "",
+                    rec.HasParasite and "|EVENT" or "",
                     RARE_NAMES[tostring(rec.AssetCategory)] and "|BEST" or "",
                     dist)
                 if rec.HasParasite then
@@ -304,7 +304,7 @@ local function espTick()
         end
     -- Tausch-Regel: neu wenn Labels da; leer nur bei leerem Snapshot
     -- (Lockout) oder 5x leer in Folge (Stale-Schutz, kein Toggle nötig):
-    local recCount = #pairs
+    local recCount = #matchList
     espStatus = "ESP: " .. n .. " Labels (" .. recCount .. " Top)"
     if n > 0 then
         espEmptyTicks = 0
@@ -541,7 +541,7 @@ tabVis:CreateToggle({
     end,
 })
 tabVis:CreateToggle({
-    Name = "Nur Parasiten",
+    Name = "Nur Event Eggs",
     CurrentValue = false,
     Callback = function(v) S.parasiteOnly = v end,
 })
