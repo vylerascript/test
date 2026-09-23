@@ -28,11 +28,11 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     immer = false, capturing = false, bindHeld = false,
     bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
     bindName = "Right Mouse",
-    box = false, box2d = false, wallCheck = false, touchHold = false, robEsp = false, collect = false, carTP = false, collected = 0,
+    box = false, box2d = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
     nameColorName = "White", nameColor = Color3.fromRGB(255, 255, 255),
     boxColorName = "White", boxColor = Color3.fromRGB(235, 235, 235),
-    player = { antiknock = false, speed = false },
+    player = { antiknock = false, speed = false, afk = false, zoom = false, spec = false },
     tapMsg = "", tapT = 0 }
 shared.S = S
 shared.locked = nil
@@ -66,6 +66,9 @@ local refreshKeyBox
 local scanCrosshair
 local serverHop
 local fpsBoost
+local clearFarm
+local restorePrompts
+local specTick
 
 -- ================= MENUe (Violett, Tabs) =================
 local ACC = Color3.fromRGB(139, 92, 246)
@@ -165,6 +168,13 @@ bX.Activated:Connect(function()
         shared.blocked = {}
     end)
     pcall(function() clearRob() end)
+    pcall(function() if clearFarm then clearFarm() end end)
+    pcall(function() if restorePrompts then restorePrompts() end end)
+    pcall(function()
+        local ch = lp.Character
+        local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+        if hum then Workspace.CurrentCamera.CameraSubject = hum end
+    end)
     for _, p in ipairs(Players:GetPlayers()) do
         pcall(function()
             local ch = p.Character
@@ -536,8 +546,8 @@ tabPlayerC.CornerRadius = UDim.new(0, 8)
 tabPlayerC.Parent = tabPlayer
 tabPlayer.Parent = frame
 
-local leftCard = mkCard(frame, 12, 132, 238, 400)
-local rightCard = mkCard(frame, 254, 132, 234, 382)
+local leftCard = mkCard(frame, 12, 132, 238, 366)
+local rightCard = mkCard(frame, 254, 132, 234, 416)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
 
@@ -619,12 +629,12 @@ bFpsMC.CornerRadius = UDim.new(0, 8)
 bFpsMC.Parent = bFpsM
 bFpsM.Parent = leftCard
 bFpsM.Activated:Connect(function() fpsBoost() end)
-local tCollect = mkToggle(leftCard, 326, "Auto Farm",
-    function() return S.collect end,
-    function(v) S.collect = v end)
-local tCarTP = mkToggle(leftCard, 360, "Car TP Farm",
-    function() return S.carTP end,
-    function(v) S.carTP = v end)
+local tInstant = mkToggle(leftCard, 326, "Instant Interact",
+    function() return S.instant end,
+    function(v)
+        S.instant = v
+        if not v and restorePrompts then pcall(restorePrompts) end
+    end)
 
 local bESP = mkToggle(rightCard, 30, "ESP",
     function() return S.esp end,
@@ -663,8 +673,11 @@ local labBox = mkMiniLabel(rightCard, 334, "Box Color")
 local bBoxC = mkDotsRow(rightCard, 348,
     function() return S.boxColorName end,
     function(e) S.boxColorName = e.n S.boxColor = e.c end)
+local tFarmESP = mkToggle(rightCard, 382, "Farm ESP",
+    function() return S.farmEsp end,
+    function(v) S.farmEsp = v end)
 
-local playerCard = mkCard(frame, 12, 132, 476, 104)
+local playerCard = mkCard(frame, 12, 132, 476, 206)
 playerCard.Visible = false
 local playerHead = mkCardHead(playerCard, "PLAYER")
 local tKnock = mkToggle(playerCard, 30, "Anti Knock",
@@ -682,13 +695,55 @@ local tSpeed = mkToggle(playerCard, 64, "Speed (32)",
             end)
         end
     end)
+local afkConn = nil
+local tAFK = mkToggle(playerCard, 98, "Anti AFK",
+    function() return S.player.afk end,
+    function(v)
+        S.player.afk = v
+        if v and not afkConn then
+            pcall(function()
+                afkConn = lp.Idled:Connect(function()
+                    pcall(function()
+                        local vu = game:GetService("VirtualUser")
+                        vu:CaptureController()
+                        vu:ClickButton2(Vector2.new())
+                    end)
+                end)
+            end)
+            if not afkConn then S.player.afk = false end
+        end
+    end)
+local tZoom = mkToggle(playerCard, 132, "Max Zoom",
+    function() return S.player.zoom end,
+    function(v)
+        S.player.zoom = v
+        if not v and S.zoomOrig then
+            pcall(function()
+                local cam = Workspace.CurrentCamera
+                if cam then cam.MaxZoomDistance = S.zoomOrig end
+            end)
+        end
+    end)
+local tSpec = mkToggle(playerCard, 166, "Spectate",
+    function() return S.player.spec end,
+    function(v)
+        S.player.spec = v
+        shared.specTarget = nil
+        if not v then
+            pcall(function()
+                local ch = lp.Character
+                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                if hum then Workspace.CurrentCamera.CameraSubject = hum end
+            end)
+        end
+    end)
 
-local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tCollect, tCarTP }
-local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC }
+local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tInstant }
+local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC, tFarmESP }
 local leftOpen, rightOpen = true, true
 local function relayout()
-    local lh = leftOpen and 400 or 26
-    local rh = rightOpen and 382 or 26
+    local lh = leftOpen and 366 or 26
+    local rh = rightOpen and 416 or 26
     leftCard.Size = UDim2.new(0, 238, 0, lh)
     rightCard.Size = UDim2.new(0, 234, 0, rh)
     local by = 132 + math.max(lh, rh) + 8
@@ -743,7 +798,7 @@ showTab = function(name)
     if isMain then
         relayout()
     else
-        frame.Size = UDim2.new(0, 500, 0, 132 + 104 + 8 + 30 + 10)
+        frame.Size = UDim2.new(0, 500, 0, 132 + 206 + 8 + 30 + 10)
     end
 end
 tabMain.Activated:Connect(function() showTab("main") tapLog("Tab", "main") end)
@@ -1365,7 +1420,7 @@ task.spawn(function()
                     pcall(function() silentTxt = silentTxt .. " Target:" .. tostring(shared.locked.DisplayName or shared.locked.Name) end)
                 end
             end
-            status.Text = "Lobby:" .. total .. " SH:" .. tostring(shared.silentCalls or 0) .. " CH:" .. tostring(shared.crossN or 0) .. (S.collect and (" CL:" .. tostring(S.collected or 0)) or "") .. "\n" .. silentTxt .. tapInfo
+            status.Text = "Lobby:" .. total .. " SH:" .. tostring(shared.silentCalls or 0) .. " CH:" .. tostring(shared.crossN or 0) .. "\n" .. silentTxt .. tapInfo
             if statusDot then
                 statusDot.BackgroundColor3 = S.silent and ACC or (S.esp and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(90, 95, 115))
             end
@@ -1416,6 +1471,14 @@ task.spawn(function()
                 if S.player.speed then
                     if hum.WalkSpeed ~= 32 then hum.WalkSpeed = 32 end
                 end
+                if S.player.zoom then
+                    local cam = Workspace.CurrentCamera
+                    if cam then
+                        if not S.zoomOrig then S.zoomOrig = cam.MaxZoomDistance end
+                        if cam.MaxZoomDistance ~= 1000 then cam.MaxZoomDistance = 1000 end
+                    end
+                end
+                if S.player.spec and specTick then specTick() end
             end
         end)
         task.wait(0.5)
@@ -1431,13 +1494,6 @@ local function robText(prompt)
     pcall(function() o = tostring(prompt.ObjectText or "") end)
     if a ~= "" then return a end
     return o
-end
--- Farm-Text: Action+Object zusammen (Trash/Break Glass haben Action="Interact"!)
-local function farmText(prompt)
-    local a, o = "", ""
-    pcall(function() a = tostring(prompt.ActionText or "") end)
-    pcall(function() o = tostring(prompt.ObjectText or "") end)
-    return string.lower(a .. " " .. o)
 end
 local function robScan()
     local found = {}
@@ -1536,295 +1592,211 @@ task.spawn(function()
     clearRob()
 end)
 
--- AUTO-FARM (Spy-Befund 23.09.: Drucker haben KEINE Prompts -> Remote-only.
--- Farmt Naeh-Prompts: Search Trash (0.5s), Claim Reward (1s), Sell Loot (1.5s), Collect/Claim + Auto-Prompts an Autos (Fenster).
--- Dazu Auto-Punch: Faust raus + schlagen wenn Autoscheibe nah. Kein Laufen/TP.)
-local collectCache = {}
-local collectTickN = 0
-local carCache = {}
-local carTickN = 0
-local punchCd = 0
-local FARM_KEYS = { "search trash", "sell loot", "claim reward", "collect", "claim", "printer", "loot buyer", "take", "window", "break", "smash", "steal", "glass" }
-local function collectPos(pr)
-    local host = pr.Parent
-    if host and not host:IsA("BasePart") then
-        host = pr:FindFirstAncestorOfClass("BasePart")
-    end
-    if host and host:IsA("BasePart") then return host.Position end
-    return nil
-end
-local function isVehiclePrompt(d)
-    local ok, fn = pcall(function() return string.lower(d:GetFullName()) end)
-    if ok and fn then
-        if string.find(fn, "vehic", 1, true) or string.find(fn, "car", 1, true) then return true end
-    end
-    return false
-end
-local CAR_KEYS = { "window", "break", "smash", "steal", "glass", "rob" }
-local function collectScan()
-    local found = {}
+-- SPECTATE (naechster lebender Spieler, passiv)
+specTick = function()
+    local cam = Workspace.CurrentCamera
+    if not cam then return end
+    local valid = false
     pcall(function()
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("ProximityPrompt") then
-                local t = farmText(d)
-                if t ~= " " and t ~= "" then
-                    local isBreak = string.find(t, "break glass", 1, true) ~= nil
-                    local holdOk = (d.HoldDuration or 0) <= 1.5 or isBreak
-                    if holdOk then
-                        local bad = string.find(t, "buy", 1, true) or string.find(t, "shop", 1, true) or string.find(t, "purchase", 1, true) or string.find(t, "price", 1, true) or string.find(t, "ink", 1, true) or string.find(t, "moneygun", 1, true) or string.find(t, "plant c4", 1, true)
-                            or string.find(t, "sit", 1, true) or string.find(t, "drive", 1, true) or string.find(t, "trunk", 1, true) or string.find(t, "grab object", 1, true) or string.find(t, "place object", 1, true) or string.find(t, "car dealer", 1, true)
-                        if not bad then
-                            local hit = false
-                            for _, k in ipairs(FARM_KEYS) do
-                                if string.find(t, k, 1, true) then hit = true break end
-                            end
-                            if not hit and isVehiclePrompt(d) then
-                                for _, k in ipairs(CAR_KEYS) do
-                                    if string.find(t, k, 1, true) then hit = true break end
-                                end
-                            end
-                            if hit then table.insert(found, d) end
-                        end
-                    end
-                end
-            end
-            if #found >= 40 then break end
+        local tgt = shared.specTarget
+        local ch = tgt and tgt.Character
+        local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+        if hum and hum.Health > 0 then
+            cam.CameraSubject = hum
+            valid = true
         end
     end)
-    return found
-end
-local function carScan()
-    local found = {}
-    pcall(function()
-        local function scanPool(pool)
-            for _, d in ipairs(pool) do
-                if d:IsA("BasePart") then
-                    local ln = string.lower(d.Name)
-                    if string.find(ln, "window", 1, true) or string.find(ln, "windshield", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "door", 1, true) then
-                        table.insert(found, d)
-                        if #found >= 30 then return true end
-                    end
+    if valid then return end
+    shared.specTarget = nil
+    local me = myHRP()
+    local myPos = me and me.Position or nil
+    local best, bd = nil, 1e9
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= lp then
+            pcall(function()
+                local ch = p.Character
+                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+                if hum and hum.Health > 0 and hrp then
+                    local d = myPos and (myPos - hrp.Position).Magnitude or 0
+                    if d < bd then best, bd = p, d end
                 end
-            end
-            return false
+            end)
         end
-        local v = Workspace:FindFirstChild("Vehicles")
-        if v then if scanPool(v:GetDescendants()) then return end end
-        local map = Workspace:FindFirstChild("Map")
-        local inter = map and map:FindFirstChild("Interactions")
-        if inter then scanPool(inter:GetDescendants()) end
-    end)
-    return found
-end
-local function equipFist()
-    local ch = lp.Character
-    if not ch then return nil end
-    local hum = ch:FindFirstChildOfClass("Humanoid")
-    local fist = ch:FindFirstChild("Fist")
-    if not fist then
-        local bp = lp:FindFirstChildOfClass("Backpack")
-        fist = bp and bp:FindFirstChild("Fist")
-        if fist and hum then pcall(function() hum:EquipTool(fist) end) end
     end
-    return fist
+    shared.specTarget = best
+end
+
+-- INSTANT INTERACT (alle Prompt-Haltezeiten -> 0, AUS stellt her)
+local promptOrig = {}
+restorePrompts = function()
+    for pr, h in pairs(promptOrig) do
+        pcall(function()
+            if pr.Parent ~= nil then pr.HoldDuration = h end
+        end)
+    end
+    promptOrig = {}
 end
 task.spawn(function()
     while alive() do
         pcall(function()
-            collectTickN = collectTickN + 1
-            if S.collect and fireproximityprompt then
-                if collectTickN % 6 == 1 or next(collectCache) == nil then
-                    collectCache = {}
-                    for _, pr in ipairs(collectScan()) do collectCache[pr] = true end
-                end
-                local me = myHRP()
-                local myPos = me and me.Position or nil
-                if myPos then
-                    for pr, _ in pairs(collectCache) do
-                        local ok, alive2 = pcall(function() return pr.Parent ~= nil end)
-                        if not ok or not alive2 then
-                            collectCache[pr] = nil
-                        else
-                            local pos = collectPos(pr)
-                            local maxD = 14
-                            pcall(function() maxD = (pr.MaxActivationDistance or 12) + 3 end)
-                            if pos and (myPos - pos).Magnitude <= maxD then
-                                pcall(function()
-                                    fireproximityprompt(pr)
-                                    S.collected = (S.collected or 0) + 1
-                                end)
-                            end
-                        end
-                    end
-                    -- Auto-Punch: Scheibe einschlagen (Faust, nur wenn nah)
-                    carTickN = carTickN + 1
-                    if carTickN % 10 == 1 or next(carCache) == nil then
-                        carCache = {}
-                        for _, w in ipairs(carScan()) do carCache[w] = true end
-                    end
-                    if os.clock() - punchCd > 0.7 then
-                        local best, bestD = nil, 14
-                        for w, _ in pairs(carCache) do
-                            local ok, alive2 = pcall(function() return w.Parent ~= nil end)
-                            if not ok or not alive2 then
-                                carCache[w] = nil
-                            else
-                                pcall(function()
-                                    local d = (myPos - w.Position).Magnitude
-                                    if d < bestD then best, bestD = w, d end
-                                end)
-                            end
-                        end
-                        if best then
-                            local fist = equipFist()
-                            if fist then
-                                pcall(function() fist:Activate() end)
-                                punchCd = os.clock()
-                            end
-                        end
+            if S.instant then
+                for _, d in ipairs(Workspace:GetDescendants()) do
+                    if d:IsA("ProximityPrompt") and d.HoldDuration > 0 then
+                        if promptOrig[d] == nil then promptOrig[d] = d.HoldDuration end
+                        pcall(function() d.HoldDuration = 0 end)
                     end
                 end
-            else
-                if next(collectCache) ~= nil then collectCache = {} end
-                if next(carCache) ~= nil then carCache = {} end
             end
         end)
-        task.wait(1)
+        task.wait(2)
     end
 end)
 
--- CAR-TP-FARM (Rob-Autos auf Map: Break Glass-Spots, KEINE Spieler-Vehicles)
-local carIdx = 0
-local breakSpots = {}
-local breakTick = 0
-local function breakSpotsScan()
+-- FARM-ESP (Trash/Glass/Sell/Claim-Tags + Drucker, passiv, 0.5s)
+local farmCache = {}
+local printerCache = {}
+local FARMESP = {
+    { k = { "search trash" }, c = Color3.fromRGB(0, 220, 255), s = "Trash" },
+    { k = { "break glass" }, c = Color3.fromRGB(255, 150, 40), s = "Glass" },
+    { k = { "sell loot", "loot buyer" }, c = Color3.fromRGB(255, 210, 80), s = "Sell" },
+    { k = { "claim reward" }, c = Color3.fromRGB(180, 110, 255), s = "Claim" },
+}
+local function farmTextOf(prompt)
+    local a, o = "", ""
+    pcall(function() a = tostring(prompt.ActionText or "") end)
+    pcall(function() o = tostring(prompt.ObjectText or "") end)
+    return string.lower(a .. " " .. o)
+end
+local function farmTag(host, txt, col)
+    if not (host and host:IsA("BasePart")) then return end
+    local b = host:FindFirstChild("SLR_Farm")
+    if not b then
+        b = Instance.new("BillboardGui")
+        b.Name = "SLR_Farm"
+        b.Size = UDim2.new(0, 84, 0, 18)
+        b.StudsOffset = Vector3.new(0, 1.6, 0)
+        b.AlwaysOnTop = true
+        local t = Instance.new("TextLabel")
+        t.Name = "T"
+        t.Size = UDim2.new(1, 0, 1, 0)
+        t.BackgroundTransparency = 1
+        t.TextScaled = true
+        t.TextStrokeTransparency = 0
+        t.TextXAlignment = Enum.TextXAlignment.Center
+        t.TextColor3 = col
+        t.Parent = b
+        b.Parent = host
+    end
+    local t = b:FindFirstChild("T")
+    if t then
+        t.Text = txt
+        t.TextColor3 = col
+    end
+end
+local function farmHost(prompt)
+    local host = prompt.Parent
+    if host and not host:IsA("BasePart") then
+        host = prompt:FindFirstAncestorOfClass("BasePart")
+    end
+    if host and host:IsA("BasePart") then return host end
+    return nil
+end
+local function farmScan()
     local found = {}
     pcall(function()
         for _, d in ipairs(Workspace:GetDescendants()) do
             if d:IsA("ProximityPrompt") then
-                local t = farmText(d)
-                if string.find(t, "break glass", 1, true) then
-                    table.insert(found, d)
+                local t = farmTextOf(d)
+                for _, def in ipairs(FARMESP) do
+                    local hit = false
+                    for _, k in ipairs(def.k) do
+                        if string.find(t, k, 1, true) then hit = true break end
+                    end
+                    if hit then
+                        table.insert(found, { pr = d, def = def })
+                        break
+                    end
                 end
             end
-            if #found >= 25 then break end
+            if #found >= 60 then break end
         end
     end)
     return found
 end
+clearFarm = function()
+    for pr, _ in pairs(farmCache) do
+        pcall(function()
+            local host = farmHost(pr)
+            local b = host and host:FindFirstChild("SLR_Farm")
+            if b then b:Destroy() end
+        end)
+    end
+    farmCache = {}
+    pcall(function()
+        for _, m in ipairs(printerCache) do
+            pcall(function()
+                for _, d in ipairs(m:GetDescendants()) do
+                    if d:IsA("BasePart") then
+                        local b = d:FindFirstChild("SLR_Farm")
+                        if b then b:Destroy() end
+                    end
+                end
+            end)
+        end
+    end)
+    printerCache = {}
+end
+local farmTickN = 0
 task.spawn(function()
     while alive() do
         pcall(function()
-            if S.carTP then
-                local hrp = myHRP()
-                local ch = lp.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                if hrp and hum and hum.Health > 0 then
-                    breakTick = breakTick + 1
-                    if breakTick % 4 == 1 or next(breakSpots) == nil then
-                        breakSpots = breakSpotsScan()
-                    end
-                    if #breakSpots > 0 then
-                        -- Naechsten Spot nehmen + normal HINLAUFEN (Walkspeed, Physik -> kein Clip-Flag).
-                        local pr, bestD = nil, 1e9
-                        local myP = hrp.Position
-                        for _, cand in ipairs(breakSpots) do
-                            pcall(function()
-                                if cand.Parent ~= nil then
-                                    local cp = collectPos(cand)
-                                    if cp then
-                                        local d = (myP - cp).Magnitude
-                                        if d < bestD then pr, bestD = cand, d end
-                                    end
-                                end
-                            end)
-                        end
-                        if not pr then
-                            breakSpots = breakSpotsScan()
-                            task.wait(0.5)
-                        else
-                            -- Normal hinlaufen (Humanoid:MoveTo = Walkspeed, Server-ok, kein Clip durch Waende).
-                            -- Ziel 6m daneben (Prompt-Reichweite), dann erst feuern.
-                            local arrived = false
-                            pcall(function()
-                                local pos = collectPos(pr)
-                                if pos then
-                                    if hum.Sit then hum.Sit = false end
-                                    local target = pos + Vector3.new(0, 0, 6)
-                                    local dist = (hrp.Position - target).Magnitude
-                                    if dist < 9 then
-                                        arrived = true
-                                    else
-                                        hum:MoveTo(target)
-                                        local waited, lastP, stuck = 0, hrp.Position, 0
-                                        local need = math.clamp(dist / 14, 3, 40)
-                                        while waited < need do
-                                            if not S.carTP then
-                                                pcall(function() hum:MoveTo(hrp.Position) end)
-                                                break
-                                            end
-                                            task.wait(0.5)
-                                            waited = waited + 0.5
-                                            local nowP = hrp.Position
-                                            local moved = (nowP - lastP).Magnitude
-                                            lastP = nowP
-                                            if moved < 1.5 then
-                                                stuck = stuck + 1
-                                                pcall(function() hum.Jump = true end)
-                                                hum:MoveTo(target)
-                                            else
-                                                stuck = 0
-                                            end
-                                            if (nowP - target).Magnitude < 9 then
-                                                arrived = true
-                                                break
-                                            end
-                                            if stuck >= 6 then break end
-                                            if hum.Sit then hum.Sit = false end
-                                        end
-                                        pcall(function() hum:MoveTo(hrp.Position) end)
-                                    end
-                                end
-                            end)
-                            if not arrived then
-                                task.wait(0.4)
-                            else
-                                task.wait(0.8)
-                        pcall(function()
-                            if hum.Sit then hum.Sit = false end
-                        end)
-                        for i = 1, 4 do
-                            if not S.carTP then break end
-                            pcall(function()
-                                local fist = equipFist()
-                                if fist then fist:Activate() end
-                            end)
-                            pcall(function()
-                                if fireproximityprompt then
-                                    local ok2 = pcall(function() return pr.Parent ~= nil end)
-                                    if ok2 then
-                                        fireproximityprompt(pr)
-                                        S.collected = (S.collected or 0) + 1
-                                    end
-                                end
-                            end)
-                            task.wait(0.45)
-                        end
-                        task.wait(0.4)
+            farmTickN = farmTickN + 1
+            if not S.farmEsp then
+                if next(farmCache) ~= nil or #printerCache > 0 then clearFarm() end
+            else
+                if farmTickN % 30 == 1 or next(farmCache) == nil then
+                    farmCache = {}
+                    for _, e in ipairs(farmScan()) do farmCache[e.pr] = e.def end
+                    printerCache = {}
+                    pcall(function()
+                        local pr = Workspace:FindFirstChild("Printers")
+                        if pr then
+                            for _, m in ipairs(pr:GetChildren()) do
+                                table.insert(printerCache, m)
                             end
                         end
-                    else
-                        task.wait(1)
-                    end
-                else
-                    task.wait(1)
+                    end)
                 end
-            else
-                task.wait(1)
+                local me = myHRP()
+                local myPos = me and me.Position or nil
+                for pr, def in pairs(farmCache) do
+                    local ok, a2 = pcall(function() return pr.Parent ~= nil end)
+                    if not ok or not a2 then
+                        farmCache[pr] = nil
+                    else
+                        local host = farmHost(pr)
+                        local pos = host and host.Position or nil
+                        if pos and myPos and (myPos - pos).Magnitude <= 2000 then
+                            farmTag(host, def.s .. " " .. math.floor((myPos - pos).Magnitude) .. "m", def.c)
+                        end
+                    end
+                end
+                if myPos then
+                    for _, m in ipairs(printerCache) do
+                        pcall(function()
+                            local part = m:IsA("BasePart") and m or m:FindFirstChildWhichIsA("BasePart", true)
+                            if part then
+                                farmTag(part, "Printer " .. math.floor((myPos - part.Position).Magnitude) .. "m", Color3.fromRGB(190, 110, 255))
+                            end
+                        end)
+                    end
+                end
             end
         end)
-        task.wait(0.2)
+        task.wait(0.5)
     end
+    clearFarm()
 end)
 
 -- FPS-BOOST (einmalig, Rejoin stellt her)
