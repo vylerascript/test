@@ -28,11 +28,11 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     immer = false, capturing = false, bindHeld = false,
     bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
     bindName = "Right Mouse",
-    box = false, box2d = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false,
+    box = false, box2d = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, farm = false, farmed = 0,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
     nameColorName = "White", nameColor = Color3.fromRGB(255, 255, 255),
     boxColorName = "White", boxColor = Color3.fromRGB(235, 235, 235),
-    player = { antiknock = false, speed = false, afk = false, zoom = false, spec = false },
+    player = { antiknock = false, afk = false, zoom = false, spec = false },
     tapMsg = "", tapT = 0 }
 shared.S = S
 shared.locked = nil
@@ -522,7 +522,7 @@ end
 
 local curTab = "main"
 local tabMain = Instance.new("TextButton")
-tabMain.Size = UDim2.new(0, 238, 0, 26)
+tabMain.Size = UDim2.new(0, 152, 0, 26)
 tabMain.Position = UDim2.new(0, 12, 0, 100)
 tabMain.Text = "MAIN"
 tabMain.TextSize = 13
@@ -533,9 +533,21 @@ local tabMainC = Instance.new("UICorner")
 tabMainC.CornerRadius = UDim.new(0, 8)
 tabMainC.Parent = tabMain
 tabMain.Parent = frame
+local tabFarm = Instance.new("TextButton")
+tabFarm.Size = UDim2.new(0, 152, 0, 26)
+tabFarm.Position = UDim2.new(0, 172, 0, 100)
+tabFarm.Text = "FARM"
+tabFarm.TextSize = 13
+tabFarm.BackgroundColor3 = CARD2
+tabFarm.TextColor3 = TXT
+tabFarm.BorderSizePixel = 0
+local tabFarmC = Instance.new("UICorner")
+tabFarmC.CornerRadius = UDim.new(0, 8)
+tabFarmC.Parent = tabFarm
+tabFarm.Parent = frame
 local tabPlayer = Instance.new("TextButton")
-tabPlayer.Size = UDim2.new(0, 238, 0, 26)
-tabPlayer.Position = UDim2.new(0, 250, 0, 100)
+tabPlayer.Size = UDim2.new(0, 152, 0, 26)
+tabPlayer.Position = UDim2.new(0, 332, 0, 100)
 tabPlayer.Text = "PLAYER"
 tabPlayer.TextSize = 13
 tabPlayer.BackgroundColor3 = CARD2
@@ -546,8 +558,8 @@ tabPlayerC.CornerRadius = UDim.new(0, 8)
 tabPlayerC.Parent = tabPlayer
 tabPlayer.Parent = frame
 
-local leftCard = mkCard(frame, 12, 132, 238, 366)
-local rightCard = mkCard(frame, 254, 132, 234, 416)
+local leftCard = mkCard(frame, 12, 132, 238, 326)
+local rightCard = mkCard(frame, 254, 132, 234, 382)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
 
@@ -629,12 +641,6 @@ bFpsMC.CornerRadius = UDim.new(0, 8)
 bFpsMC.Parent = bFpsM
 bFpsM.Parent = leftCard
 bFpsM.Activated:Connect(function() fpsBoost() end)
-local tInstant = mkToggle(leftCard, 326, "Instant Interact",
-    function() return S.instant end,
-    function(v)
-        S.instant = v
-        if not v and restorePrompts then pcall(restorePrompts) end
-    end)
 
 local bESP = mkToggle(rightCard, 30, "ESP",
     function() return S.esp end,
@@ -673,30 +679,31 @@ local labBox = mkMiniLabel(rightCard, 334, "Box Color")
 local bBoxC = mkDotsRow(rightCard, 348,
     function() return S.boxColorName end,
     function(e) S.boxColorName = e.n S.boxColor = e.c end)
-local tFarmESP = mkToggle(rightCard, 382, "Farm ESP",
+
+local farmCard = mkCard(frame, 12, 132, 476, 138)
+farmCard.Visible = false
+local farmHead = mkCardHead(farmCard, "AUTOFARM (stationary, kein TP)")
+local tAutoFarm = mkToggle(farmCard, 30, "Auto Farm",
+    function() return S.farm end,
+    function(v) S.farm = v end)
+local tInstantF = mkToggle(farmCard, 64, "Instant Interact",
+    function() return S.instant end,
+    function(v)
+        S.instant = v
+        if not v and restorePrompts then pcall(restorePrompts) end
+    end)
+local tFarmESPF = mkToggle(farmCard, 98, "Farm ESP",
     function() return S.farmEsp end,
     function(v) S.farmEsp = v end)
 
-local playerCard = mkCard(frame, 12, 132, 476, 206)
+local playerCard = mkCard(frame, 12, 132, 476, 172)
 playerCard.Visible = false
 local playerHead = mkCardHead(playerCard, "PLAYER")
 local tKnock = mkToggle(playerCard, 30, "Anti Knock",
     function() return S.player.antiknock end,
     function(v) S.player.antiknock = v end)
-local tSpeed = mkToggle(playerCard, 64, "Speed (32)",
-    function() return S.player.speed end,
-    function(v)
-        S.player.speed = v
-        if not v then
-            pcall(function()
-                local ch = lp.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                if hum then hum.WalkSpeed = 16 end
-            end)
-        end
-    end)
 local afkConn = nil
-local tAFK = mkToggle(playerCard, 98, "Anti AFK",
+local tAFK = mkToggle(playerCard, 64, "Anti AFK",
     function() return S.player.afk end,
     function(v)
         S.player.afk = v
@@ -713,7 +720,7 @@ local tAFK = mkToggle(playerCard, 98, "Anti AFK",
             if not afkConn then S.player.afk = false end
         end
     end)
-local tZoom = mkToggle(playerCard, 132, "Max Zoom",
+local tZoom = mkToggle(playerCard, 98, "Max Zoom",
     function() return S.player.zoom end,
     function(v)
         S.player.zoom = v
@@ -724,7 +731,7 @@ local tZoom = mkToggle(playerCard, 132, "Max Zoom",
             end)
         end
     end)
-local tSpec = mkToggle(playerCard, 166, "Spectate",
+local tSpec = mkToggle(playerCard, 132, "Spectate",
     function() return S.player.spec end,
     function(v)
         S.player.spec = v
@@ -738,12 +745,12 @@ local tSpec = mkToggle(playerCard, 166, "Spectate",
         end
     end)
 
-local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tInstant }
-local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC, tFarmESP }
+local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM }
+local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC }
 local leftOpen, rightOpen = true, true
 local function relayout()
-    local lh = leftOpen and 366 or 26
-    local rh = rightOpen and 416 or 26
+    local lh = leftOpen and 326 or 26
+    local rh = rightOpen and 382 or 26
     leftCard.Size = UDim2.new(0, 238, 0, lh)
     rightCard.Size = UDim2.new(0, 234, 0, rh)
     local by = 132 + math.max(lh, rh) + 8
@@ -780,7 +787,9 @@ bHide.Activated:Connect(function()
     leftCard.Visible = (not hidden) and (curTab == "main")
     rightCard.Visible = (not hidden) and (curTab == "main")
     playerCard.Visible = (not hidden) and (curTab == "player")
+    farmCard.Visible = (not hidden) and (curTab == "farm")
     tabMain.Visible = not hidden
+    tabFarm.Visible = not hidden
     tabPlayer.Visible = not hidden
     bHide.Text = hidden and "SHOW MENU" or "HIDE MENU"
     tapLog("Menu", hidden and "hide" or "show")
@@ -788,20 +797,24 @@ end)
 showTab = function(name)
     curTab = name
     tabMain.BackgroundColor3 = (name == "main") and ACC or CARD2
+    tabFarm.BackgroundColor3 = (name == "farm") and ACC or CARD2
     tabPlayer.BackgroundColor3 = (name == "player") and ACC or CARD2
-    local isMain = (name == "main")
     if not hidden then
-        leftCard.Visible = isMain
-        rightCard.Visible = isMain
-        playerCard.Visible = (not isMain) and (name == "player")
+        leftCard.Visible = (name == "main")
+        rightCard.Visible = (name == "main")
+        playerCard.Visible = (name == "player")
+        farmCard.Visible = (name == "farm")
     end
-    if isMain then
+    if name == "main" then
         relayout()
+    elseif name == "player" then
+        frame.Size = UDim2.new(0, 500, 0, 132 + 172 + 8 + 30 + 10)
     else
-        frame.Size = UDim2.new(0, 500, 0, 132 + 206 + 8 + 30 + 10)
+        frame.Size = UDim2.new(0, 500, 0, 132 + 138 + 8 + 30 + 10)
     end
 end
 tabMain.Activated:Connect(function() showTab("main") tapLog("Tab", "main") end)
+tabFarm.Activated:Connect(function() showTab("farm") tapLog("Tab", "farm") end)
 tabPlayer.Activated:Connect(function() showTab("player") tapLog("Tab", "player") end)
 
 -- AIM-Touch-Knopf (Boden rechts)
@@ -1420,7 +1433,7 @@ task.spawn(function()
                     pcall(function() silentTxt = silentTxt .. " Target:" .. tostring(shared.locked.DisplayName or shared.locked.Name) end)
                 end
             end
-            status.Text = "Lobby:" .. total .. " SH:" .. tostring(shared.silentCalls or 0) .. " CH:" .. tostring(shared.crossN or 0) .. "\n" .. silentTxt .. tapInfo
+            status.Text = "Lobby:" .. total .. " SH:" .. tostring(shared.silentCalls or 0) .. " CH:" .. tostring(shared.crossN or 0) .. (S.farm and (" FM:" .. tostring(S.farmed or 0)) or "") .. "\n" .. silentTxt .. tapInfo
             if statusDot then
                 statusDot.BackgroundColor3 = S.silent and ACC or (S.esp and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(90, 95, 115))
             end
@@ -1452,7 +1465,7 @@ task.spawn(function()
     clearESP()
 end)
 
--- PLAYER-Loop (Anti Knock + Speed)
+-- PLAYER-Loop (Anti Knock + Zoom + Spectate)
 task.spawn(function()
     while alive() do
         pcall(function()
@@ -1467,9 +1480,6 @@ task.spawn(function()
                     if st == Enum.HumanoidStateType.Ragdoll or st == Enum.HumanoidStateType.Physics or st == Enum.HumanoidStateType.FallenDown then
                         hum:ChangeState(Enum.HumanoidStateType.GettingUp)
                     end
-                end
-                if S.player.speed then
-                    if hum.WalkSpeed ~= 32 then hum.WalkSpeed = 32 end
                 end
                 if S.player.zoom then
                     local cam = Workspace.CurrentCamera
@@ -1797,6 +1807,75 @@ task.spawn(function()
         task.wait(0.5)
     end
     clearFarm()
+end)
+
+-- AUTO-FARM (stationaer: feuert Farm-Prompts nur in Reichweite, kein TP, kein Laufen)
+local farmFireCache = {}
+local farmFireTickN = 0
+local FARMFIRE_KEYS = { "search trash", "sell loot", "loot buyer", "claim reward", "collect", "claim", "printer", "take", "break glass", "window", "smash", "steal", "glass" }
+local function farmFireScan()
+    local found = {}
+    pcall(function()
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("ProximityPrompt") then
+                local t = farmTextOf(d)
+                if t ~= " " and t ~= "" then
+                    local isBreak = string.find(t, "break glass", 1, true) ~= nil
+                    if (d.HoldDuration or 0) <= 1.5 or isBreak then
+                        local bad = string.find(t, "buy", 1, true) or string.find(t, "shop", 1, true) or string.find(t, "purchase", 1, true) or string.find(t, "price", 1, true) or string.find(t, "ink", 1, true) or string.find(t, "moneygun", 1, true) or string.find(t, "plant c4", 1, true)
+                            or string.find(t, "sit", 1, true) or string.find(t, "drive", 1, true) or string.find(t, "trunk", 1, true) or string.find(t, "grab object", 1, true) or string.find(t, "place object", 1, true) or string.find(t, "car dealer", 1, true)
+                        if not bad then
+                            for _, k in ipairs(FARMFIRE_KEYS) do
+                                if string.find(t, k, 1, true) then
+                                    table.insert(found, d)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            if #found >= 40 then break end
+        end
+    end)
+    return found
+end
+task.spawn(function()
+    while alive() do
+        pcall(function()
+            farmFireTickN = farmFireTickN + 1
+            if S.farm and fireproximityprompt then
+                if farmFireTickN % 6 == 1 or next(farmFireCache) == nil then
+                    farmFireCache = {}
+                    for _, pr in ipairs(farmFireScan()) do farmFireCache[pr] = true end
+                end
+                local me = myHRP()
+                local myPos = me and me.Position or nil
+                if myPos then
+                    for pr, _ in pairs(farmFireCache) do
+                        local ok, a2 = pcall(function() return pr.Parent ~= nil end)
+                        if not ok or not a2 then
+                            farmFireCache[pr] = nil
+                        else
+                            local host = farmHost(pr)
+                            local pos = host and host.Position or nil
+                            local maxD = 14
+                            pcall(function() maxD = (pr.MaxActivationDistance or 12) + 3 end)
+                            if pos and (myPos - pos).Magnitude <= maxD then
+                                pcall(function()
+                                    fireproximityprompt(pr)
+                                    S.farmed = (S.farmed or 0) + 1
+                                end)
+                            end
+                        end
+                    end
+                end
+            else
+                if next(farmFireCache) ~= nil then farmFireCache = {} end
+            end
+        end)
+        task.wait(1)
+    end
 end)
 
 -- FPS-BOOST (einmalig, Rejoin stellt her)
