@@ -1710,54 +1710,64 @@ task.spawn(function()
                         breakSpots = breakSpotsScan()
                     end
                     if #breakSpots > 0 then
-                        carIdx = (carIdx % #breakSpots) + 1
-                        local pr = breakSpots[carIdx]
-                        local okPr = pcall(function() return pr.Parent ~= nil end)
-                        if not okPr then
-                            breakSpots[carIdx] = nil
-                            task.wait(0.3)
+                        -- Naechsten Spot nehmen + normal HINLAUFEN (Walkspeed, Physik -> kein Clip-Flag).
+                        local pr, bestD = nil, 1e9
+                        local myP = hrp.Position
+                        for _, cand in ipairs(breakSpots) do
+                            pcall(function()
+                                if cand.Parent ~= nil then
+                                    local cp = collectPos(cand)
+                                    if cp then
+                                        local d = (myP - cp).Magnitude
+                                        if d < bestD then pr, bestD = cand, d end
+                                    end
+                                end
+                            end)
+                        end
+                        if not pr then
+                            breakSpots = breakSpotsScan()
+                            task.wait(0.5)
                         else
-                            -- Sanft hinfahren (kein hartes TP -> Anti-Clip "Keine Cliperkennung" TPt sonst zurueck).
-                            -- Ziel 7m daneben (nicht IM Auto), Tween ~55 studs/s, dann erst feuern.
+                            -- Normal hinlaufen (Humanoid:MoveTo = Walkspeed, Server-ok, kein Clip durch Waende).
+                            -- Ziel 6m daneben (Prompt-Reichweite), dann erst feuern.
                             local arrived = false
                             pcall(function()
                                 local pos = collectPos(pr)
                                 if pos then
                                     if hum.Sit then hum.Sit = false end
-                                    local target = pos + Vector3.new(0, 3, 7)
+                                    local target = pos + Vector3.new(0, 0, 6)
                                     local dist = (hrp.Position - target).Magnitude
                                     if dist < 9 then
                                         arrived = true
                                     else
-                                        local tw = nil
-                                        pcall(function()
-                                            local TS = game:GetService("TweenService")
-                                            local t = math.clamp(dist / 55, 0.8, 8)
-                                            tw = TS:Create(hrp, TweenInfo.new(t, Enum.EasingStyle.Linear), { CFrame = CFrame.new(target) })
-                                            tw:Play()
-                                        end)
-                                        local waited = 0
-                                        local need = math.clamp(dist / 55, 0.8, 8) + 0.5
+                                        hum:MoveTo(target)
+                                        local waited, lastP, stuck = 0, hrp.Position, 0
+                                        local need = math.clamp(dist / 14, 3, 40)
                                         while waited < need do
                                             if not S.carTP then
-                                                pcall(function() if tw then tw:Cancel() end end)
+                                                pcall(function() hum:MoveTo(hrp.Position) end)
                                                 break
                                             end
-                                            task.wait(0.2)
-                                            waited = waited + 0.2
-                                            local okd = pcall(function()
-                                                return (hrp.Position - target).Magnitude < 9
-                                            end)
-                                            if okd and (hrp.Position - target).Magnitude < 9 then
+                                            task.wait(0.5)
+                                            waited = waited + 0.5
+                                            local nowP = hrp.Position
+                                            local moved = (nowP - lastP).Magnitude
+                                            lastP = nowP
+                                            if moved < 1.5 then
+                                                stuck = stuck + 1
+                                                pcall(function() hum.Jump = true end)
+                                                hum:MoveTo(target)
+                                            else
+                                                stuck = 0
+                                            end
+                                            if (nowP - target).Magnitude < 9 then
                                                 arrived = true
                                                 break
                                             end
+                                            if stuck >= 6 then break end
+                                            if hum.Sit then hum.Sit = false end
                                         end
-                                        pcall(function() if tw then tw:Cancel() end end)
-                                        pcall(function()
-                                            hrp.Velocity = Vector3.zero
-                                            hrp.RotVelocity = Vector3.zero
-                                        end)
+                                        pcall(function() hum:MoveTo(hrp.Position) end)
                                     end
                                 end
                             end)
