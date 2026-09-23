@@ -1417,6 +1417,13 @@ local function robText(prompt)
     if a ~= "" then return a end
     return o
 end
+-- Farm-Text: Action+Object zusammen (Trash/Break Glass haben Action="Interact"!)
+local function farmText(prompt)
+    local a, o = "", ""
+    pcall(function() a = tostring(prompt.ActionText or "") end)
+    pcall(function() o = tostring(prompt.ObjectText or "") end)
+    return string.lower(a .. " " .. o)
+end
 local function robScan()
     local found = {}
     pcall(function()
@@ -1544,8 +1551,8 @@ local function collectScan()
     pcall(function()
         for _, d in ipairs(Workspace:GetDescendants()) do
             if d:IsA("ProximityPrompt") then
-                local t = string.lower(robText(d))
-                if t ~= "" then
+                local t = farmText(d)
+                if t ~= " " and t ~= "" then
                     local isBreak = string.find(t, "break glass", 1, true) ~= nil
                     local holdOk = (d.HoldDuration or 0) <= 1.5 or isBreak
                     if holdOk then
@@ -1574,17 +1581,23 @@ end
 local function carScan()
     local found = {}
     pcall(function()
-        local v = Workspace:FindFirstChild("Vehicles")
-        local pool = v and v:GetDescendants() or Workspace:GetDescendants()
-        for _, d in ipairs(pool) do
-            if d:IsA("BasePart") then
-                local ln = string.lower(d.Name)
-                if string.find(ln, "window", 1, true) or string.find(ln, "windshield", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "door", 1, true) then
-                    table.insert(found, d)
+        local function scanPool(pool)
+            for _, d in ipairs(pool) do
+                if d:IsA("BasePart") then
+                    local ln = string.lower(d.Name)
+                    if string.find(ln, "window", 1, true) or string.find(ln, "windshield", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "door", 1, true) then
+                        table.insert(found, d)
+                        if #found >= 30 then return true end
+                    end
                 end
             end
-            if #found >= 30 then break end
+            return false
         end
+        local v = Workspace:FindFirstChild("Vehicles")
+        if v then if scanPool(v:GetDescendants()) then return end end
+        local map = Workspace:FindFirstChild("Map")
+        local inter = map and map:FindFirstChild("Interactions")
+        if inter then scanPool(inter:GetDescendants()) end
     end)
     return found
 end
@@ -1674,7 +1687,7 @@ local function breakSpotsScan()
     pcall(function()
         for _, d in ipairs(Workspace:GetDescendants()) do
             if d:IsA("ProximityPrompt") then
-                local t = string.lower(robText(d))
+                local t = farmText(d)
                 if string.find(t, "break glass", 1, true) then
                     table.insert(found, d)
                 end
