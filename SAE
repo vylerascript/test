@@ -28,7 +28,7 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     immer = false, capturing = false, bindHeld = false,
     bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
     bindName = "Right Mouse",
-    box = false, box2d = false, wallCheck = false, touchHold = false, robEsp = false, logShots = false, collect = false, collected = 0,
+    box = false, box2d = false, wallCheck = false, touchHold = false, robEsp = false, collect = false, carTP = false, collected = 0,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
     nameColorName = "White", nameColor = Color3.fromRGB(255, 255, 255),
     boxColorName = "White", boxColor = Color3.fromRGB(235, 235, 235),
@@ -41,7 +41,7 @@ shared.silentCalls = 0
 shared.crossN = 0
 
 local WEAPONS = { "glock", "cz75", "spas", "mp5", "ump", "apc", "draco", "micro", "arp", "scar", "baton", "tazer", "c4", "button", "p90", "viper", "drum", "knife", "revolver", "uzi", "deagle", "pistol", "rifle", "shotgun", "ak", "smg", "tx22", "frt", "hipoint", "hi-point", "springfield", "doublebarrel", "barrel", "fmg", "ruger", "makarov", "m4", "m16", "ar15", "ar-15", "aug", "g36", "lmg", "minigun", "rpg", "sniper", "m1911", "tec", "fiveseven", "five-seven", "deserteagle", "eagle", "mossberg", "remington", "python", "vector", "kriss", "beretta", "m9", "sig", "hk", "galil", "tsr", "triarc",
-    "mac", "m&p", "m27", "m27d", "perun", "thompson", "famas", "honeybadger", "badger", "binary", "g17" }
+    "mac", "m&p", "m27", "m27d", "perun", "thompson", "famas", "honeybadger", "badger", "binary", "g17", "xmas" }
 local CIVIL = { "fist", "phone", "mop", "mentos", "seed", "mask", "bag", "vest", "binocular", "grab", "licen", "shake", "tomato", "carrot", "pumpkin" }
 local ESP_COLORS = {
     { n = "Green", c = Color3.fromRGB(0, 255, 130) },
@@ -186,7 +186,7 @@ bX.Activated:Connect(function()
             if pg then table.insert(roots, pg) end
         end)
         for _, r in ipairs(roots) do
-            for _, n in ipairs({ "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_PDUMP", "SLR_LOG", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }) do
+            for _, n in ipairs({ "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_PDUMP", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }) do
                 pcall(function() local o = r:FindFirstChild(n) if o then o:Destroy() end end)
             end
         end
@@ -619,15 +619,12 @@ bFpsMC.CornerRadius = UDim.new(0, 8)
 bFpsMC.Parent = bFpsM
 bFpsM.Parent = leftCard
 bFpsM.Activated:Connect(function() fpsBoost() end)
-local tCollect = mkToggle(leftCard, 326, "Auto Collect",
+local tCollect = mkToggle(leftCard, 326, "Auto Farm",
     function() return S.collect end,
     function(v) S.collect = v end)
-local tLog = mkToggle(leftCard, 360, "Log Shots",
-    function() return S.logShots end,
-    function(v)
-        S.logShots = v
-        if shared.setLogWin then pcall(shared.setLogWin, v) end
-    end)
+local tCarTP = mkToggle(leftCard, 360, "Car TP Farm",
+    function() return S.carTP end,
+    function(v) S.carTP = v end)
 
 local bESP = mkToggle(rightCard, 30, "ESP",
     function() return S.esp end,
@@ -674,7 +671,7 @@ local tKnock = mkToggle(playerCard, 30, "Anti Knock",
     function() return S.player.antiknock end,
     function(v) S.player.antiknock = v end)
 
-local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tCollect, tLog }
+local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tCollect, tCarTP }
 local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC }
 local leftOpen, rightOpen = true, true
 local function relayout()
@@ -739,81 +736,6 @@ showTab = function(name)
 end
 tabMain.Activated:Connect(function() showTab("main") tapLog("Tab", "main") end)
 tabPlayer.Activated:Connect(function() showTab("player") tapLog("Tab", "player") end)
-
--- Shot-Log-Fenster (für Autofarm-Analyse)
-shared.setLogWin = function(on)
-    pcall(function()
-        local old = root:FindFirstChild("SLR_LOG")
-        if old then old:Destroy() end
-        shared.logBox = nil
-        if not on then return end
-        local g = Instance.new("ScreenGui")
-        g.Name = "SLR_LOG"
-        g.ResetOnSpawn = false
-        g.Parent = root
-        local f = Instance.new("Frame")
-        f.Size = UDim2.new(0, 420, 0, 300)
-        f.Position = UDim2.new(0.5, -210, 0.5, -150)
-        f.BackgroundColor3 = Color3.fromRGB(14, 16, 22)
-        f.BorderSizePixel = 0
-        f.Active = true
-        f.Draggable = true
-        f.Parent = g
-        local fc = Instance.new("UICorner")
-        fc.CornerRadius = UDim.new(0, 10)
-        fc.Parent = f
-        local title2 = Instance.new("TextLabel")
-        title2.Size = UDim2.new(1, -50, 0, 28)
-        title2.Position = UDim2.new(0, 12, 0, 6)
-        title2.BackgroundTransparency = 1
-        title2.Text = "SHOT LOG (last 5)"
-        title2.TextSize = 14
-        title2.TextXAlignment = Enum.TextXAlignment.Left
-        title2.TextColor3 = Color3.fromRGB(255, 255, 255)
-        title2.Parent = f
-        local x = Instance.new("TextButton")
-        x.Size = UDim2.new(0, 26, 0, 26)
-        x.Position = UDim2.new(1, -36, 0, 6)
-        x.Text = "X"
-        x.BackgroundColor3 = Color3.fromRGB(190, 55, 55)
-        x.TextColor3 = Color3.fromRGB(255, 255, 255)
-        x.BorderSizePixel = 0
-        local xc = Instance.new("UICorner")
-        xc.CornerRadius = UDim.new(1, 0)
-        xc.Parent = x
-        x.Parent = f
-        x.Activated:Connect(function()
-            S.logShots = false
-            pcall(function() g:Destroy() end)
-        end)
-        local bx = Instance.new("TextBox")
-        bx.Size = UDim2.new(1, -24, 1, -50)
-        bx.Position = UDim2.new(0, 12, 0, 40)
-        bx.BackgroundColor3 = Color3.fromRGB(22, 25, 34)
-        bx.TextColor3 = Color3.fromRGB(210, 215, 230)
-        bx.TextSize = 11
-        bx.TextXAlignment = Enum.TextXAlignment.Left
-        bx.TextYAlignment = Enum.TextYAlignment.Top
-        bx.MultiLine = true
-        bx.ClearTextOnFocus = false
-        bx.TextEditable = false
-        bx.TextWrapped = true
-        bx.BorderSizePixel = 0
-        local boxc = Instance.new("UICorner")
-        boxc.CornerRadius = UDim.new(0, 8)
-        boxc.Parent = bx
-        bx.Parent = f
-        bx.Text = S.logShots and "logging... shoot!" or "Log Shots ist AUS"
-        shared.logBox = bx
-    end)
-end
-shared.logRefresh = function()
-    pcall(function()
-        if shared.logBox and shared.logBox.Parent then
-            shared.logBox.Text = table.concat(shared.shotLog or { "keine Schüsse" }, "\n---\n")
-        end
-    end)
-end
 
 -- AIM-Touch-Knopf (Boden rechts)
 pcall(function()
@@ -948,32 +870,6 @@ local function silentHold()
 end
 shared.silentTarget = silentTarget
 shared.silentHold = silentHold
-shared.shotLog = {}
-shared.sumArg = function(v, depth)
-    depth = depth or 0
-    local t = typeof(v)
-    if t == "Vector3" then
-        return "V3(" .. math.floor(v.X) .. "," .. math.floor(v.Y) .. "," .. math.floor(v.Z) .. ")"
-    elseif t == "CFrame" then
-        local p = v.Position
-        return "CF(" .. math.floor(p.X) .. "," .. math.floor(p.Y) .. "," .. math.floor(p.Z) .. ")"
-    elseif t == "Instance" then
-        return v.ClassName .. ":" .. v.Name
-    elseif t == "number" or t == "string" or t == "boolean" then
-        return t .. ":" .. tostring(v)
-    elseif t == "table" then
-        if depth > 0 then return "{...}" end
-        local parts, n = {}, 0
-        for k, vv in pairs(v) do
-            n = n + 1
-            if n > 10 then table.insert(parts, "...") break end
-            table.insert(parts, tostring(k) .. "=" .. shared.sumArg(vv, depth + 1))
-        end
-        return "{" .. table.concat(parts, ",") .. "}"
-    else
-        return t
-    end
-end
 task.spawn(function()
     local Projectile = nil
     for i = 1, 30 do
@@ -996,22 +892,6 @@ task.spawn(function()
         pcall(function()
             shared.silentCalls = (shared.silentCalls or 0) + 1
             local st = shared.S
-            if st and st.logShots then
-                local parts, n = {}, 0
-                if type(params) == "table" then
-                    for k, v in pairs(params) do
-                        n = n + 1
-                        if n > 12 then table.insert(parts, "...") break end
-                        table.insert(parts, tostring(k) .. "=" .. shared.sumArg(v))
-                    end
-                else
-                    table.insert(parts, shared.sumArg(params))
-                end
-                shared.shotLog = shared.shotLog or {}
-                table.insert(shared.shotLog, 1, table.concat(parts, " "))
-                while #shared.shotLog > 5 do table.remove(shared.shotLog) end
-                if shared.logRefresh then pcall(shared.logRefresh) end
-            end
             if st and st.silent and params and params.Origin and params.Direction and shared.silentHold() then
                 local head = shared.silentTarget()
                 if head then
@@ -1634,10 +1514,15 @@ task.spawn(function()
     clearRob()
 end)
 
--- AUTO-COLLECT (Drucker einsammeln: nur Claim/Collect, nie Kaufen/Füttern, kein Laufen)
+-- AUTO-FARM (Spy-Befund 23.09.: Drucker haben KEINE Prompts -> Remote-only.
+-- Farmt Naeh-Prompts: Search Trash (0.5s), Claim Reward (1s), Sell Loot (1.5s), Collect/Claim + Auto-Prompts an Autos (Fenster).
+-- Dazu Auto-Punch: Faust raus + schlagen wenn Autoscheibe nah. Kein Laufen/TP.)
 local collectCache = {}
 local collectTickN = 0
-local COLLECT_KEYS = { "printer", "collect", "claim" }
+local carCache = {}
+local carTickN = 0
+local punchCd = 0
+local FARM_KEYS = { "search trash", "sell loot", "claim reward", "collect", "claim", "printer", "loot buyer", "take", "window", "break", "smash", "steal", "glass" }
 local function collectPos(pr)
     local host = pr.Parent
     if host and not host:IsA("BasePart") then
@@ -1646,28 +1531,74 @@ local function collectPos(pr)
     if host and host:IsA("BasePart") then return host.Position end
     return nil
 end
+local function isVehiclePrompt(d)
+    local ok, fn = pcall(function() return string.lower(d:GetFullName()) end)
+    if ok and fn then
+        if string.find(fn, "vehic", 1, true) or string.find(fn, "car", 1, true) then return true end
+    end
+    return false
+end
+local CAR_KEYS = { "window", "break", "smash", "steal", "glass", "rob" }
 local function collectScan()
     local found = {}
     pcall(function()
         for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("ProximityPrompt") and d.HoldDuration == 0 then
+            if d:IsA("ProximityPrompt") then
                 local t = string.lower(robText(d))
                 if t ~= "" then
-                    local bad = string.find(t, "buy", 1, true) or string.find(t, "shop", 1, true) or string.find(t, "purchase", 1, true) or string.find(t, "price", 1, true) or string.find(t, "ink", 1, true)
-                    if not bad then
-                        for _, k in ipairs(COLLECT_KEYS) do
-                            if string.find(t, k, 1, true) then
-                                table.insert(found, d)
-                                break
+                    local isBreak = string.find(t, "break glass", 1, true) ~= nil
+                    local holdOk = (d.HoldDuration or 0) <= 1.5 or isBreak
+                    if holdOk then
+                        local bad = string.find(t, "buy", 1, true) or string.find(t, "shop", 1, true) or string.find(t, "purchase", 1, true) or string.find(t, "price", 1, true) or string.find(t, "ink", 1, true) or string.find(t, "moneygun", 1, true) or string.find(t, "plant c4", 1, true)
+                            or string.find(t, "sit", 1, true) or string.find(t, "drive", 1, true) or string.find(t, "trunk", 1, true) or string.find(t, "grab object", 1, true) or string.find(t, "place object", 1, true) or string.find(t, "car dealer", 1, true)
+                        if not bad then
+                            local hit = false
+                            for _, k in ipairs(FARM_KEYS) do
+                                if string.find(t, k, 1, true) then hit = true break end
                             end
+                            if not hit and isVehiclePrompt(d) then
+                                for _, k in ipairs(CAR_KEYS) do
+                                    if string.find(t, k, 1, true) then hit = true break end
+                                end
+                            end
+                            if hit then table.insert(found, d) end
                         end
                     end
+                end
+            end
+            if #found >= 40 then break end
+        end
+    end)
+    return found
+end
+local function carScan()
+    local found = {}
+    pcall(function()
+        local v = Workspace:FindFirstChild("Vehicles")
+        local pool = v and v:GetDescendants() or Workspace:GetDescendants()
+        for _, d in ipairs(pool) do
+            if d:IsA("BasePart") then
+                local ln = string.lower(d.Name)
+                if string.find(ln, "window", 1, true) or string.find(ln, "windshield", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "door", 1, true) then
+                    table.insert(found, d)
                 end
             end
             if #found >= 30 then break end
         end
     end)
     return found
+end
+local function equipFist()
+    local ch = lp.Character
+    if not ch then return nil end
+    local hum = ch:FindFirstChildOfClass("Humanoid")
+    local fist = ch:FindFirstChild("Fist")
+    if not fist then
+        local bp = lp:FindFirstChildOfClass("Backpack")
+        fist = bp and bp:FindFirstChild("Fist")
+        if fist and hum then pcall(function() hum:EquipTool(fist) end) end
+    end
+    return fist
 end
 task.spawn(function()
     while alive() do
@@ -1687,22 +1618,120 @@ task.spawn(function()
                             collectCache[pr] = nil
                         else
                             local pos = collectPos(pr)
-                            if pos and (myPos - pos).Magnitude <= 25 then
+                            local maxD = 14
+                            pcall(function() maxD = (pr.MaxActivationDistance or 12) + 3 end)
+                            if pos and (myPos - pos).Magnitude <= maxD then
                                 pcall(function()
-                                    if pr.HoldDuration == 0 then
-                                        fireproximityprompt(pr)
-                                        S.collected = (S.collected or 0) + 1
-                                    end
+                                    fireproximityprompt(pr)
+                                    S.collected = (S.collected or 0) + 1
                                 end)
+                            end
+                        end
+                    end
+                    -- Auto-Punch: Scheibe einschlagen (Faust, nur wenn nah)
+                    carTickN = carTickN + 1
+                    if carTickN % 10 == 1 or next(carCache) == nil then
+                        carCache = {}
+                        for _, w in ipairs(carScan()) do carCache[w] = true end
+                    end
+                    if os.clock() - punchCd > 0.7 then
+                        local best, bestD = nil, 14
+                        for w, _ in pairs(carCache) do
+                            local ok, alive2 = pcall(function() return w.Parent ~= nil end)
+                            if not ok or not alive2 then
+                                carCache[w] = nil
+                            else
+                                pcall(function()
+                                    local d = (myPos - w.Position).Magnitude
+                                    if d < bestD then best, bestD = w, d end
+                                end)
+                            end
+                        end
+                        if best then
+                            local fist = equipFist()
+                            if fist then
+                                pcall(function() fist:Activate() end)
+                                punchCd = os.clock()
                             end
                         end
                     end
                 end
             else
                 if next(collectCache) ~= nil then collectCache = {} end
+                if next(carCache) ~= nil then carCache = {} end
             end
         end)
-        task.wait(3)
+        task.wait(1)
+    end
+end)
+
+-- CAR-TP-FARM (User-Wunsch: zu jedem Auto TP + Scheibe aufschlagen, Break Glass hold=3 feuern)
+local carIdx = 0
+task.spawn(function()
+    while alive() do
+        pcall(function()
+            if S.carTP then
+                local hrp = myHRP()
+                local ch = lp.Character
+                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    local cars = {}
+                    pcall(function()
+                        local v = Workspace:FindFirstChild("Vehicles")
+                        if v then cars = v:GetChildren() end
+                    end)
+                    if #cars > 0 then
+                        carIdx = (carIdx % #cars) + 1
+                        local car = cars[carIdx]
+                        pcall(function()
+                            local cf, _ = car:GetBoundingBox()
+                            if hum.Sit then hum.Sit = false end
+                            hrp.CFrame = CFrame.new(cf.Position + Vector3.new(5, 4, 0))
+                            hrp.Velocity = Vector3.zero
+                            hrp.RotVelocity = Vector3.zero
+                        end)
+                        task.wait(0.6)
+                        pcall(function()
+                            if hum.Sit then hum.Sit = false end
+                        end)
+                        for i = 1, 7 do
+                            if not S.carTP then break end
+                            pcall(function()
+                                local fist = equipFist()
+                                if fist then fist:Activate() end
+                            end)
+                            pcall(function()
+                                if fireproximityprompt then
+                                    for pr, _ in pairs(collectCache) do
+                                        local ok = pcall(function() return pr.Parent ~= nil end)
+                                        if ok then
+                                            local t = string.lower(robText(pr))
+                                            if string.find(t, "break glass", 1, true) then
+                                                local pos = collectPos(pr)
+                                                local me2 = myHRP()
+                                                if pos and me2 and (me2.Position - pos).Magnitude <= 20 then
+                                                    fireproximityprompt(pr)
+                                                    S.collected = (S.collected or 0) + 1
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end)
+                            task.wait(0.45)
+                        end
+                        task.wait(0.4)
+                    else
+                        task.wait(1)
+                    end
+                else
+                    task.wait(1)
+                end
+            else
+                task.wait(1)
+            end
+        end)
+        task.wait(0.2)
     end
 end)
 
