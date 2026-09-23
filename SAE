@@ -1665,8 +1665,25 @@ task.spawn(function()
     end
 end)
 
--- CAR-TP-FARM (User-Wunsch: zu jedem Auto TP + Scheibe aufschlagen, Break Glass hold=3 feuern)
+-- CAR-TP-FARM (Rob-Autos auf Map: Break Glass-Spots, KEINE Spieler-Vehicles)
 local carIdx = 0
+local breakSpots = {}
+local breakTick = 0
+local function breakSpotsScan()
+    local found = {}
+    pcall(function()
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("ProximityPrompt") then
+                local t = string.lower(robText(d))
+                if string.find(t, "break glass", 1, true) then
+                    table.insert(found, d)
+                end
+            end
+            if #found >= 25 then break end
+        end
+    end)
+    return found
+end
 task.spawn(function()
     while alive() do
         pcall(function()
@@ -1675,21 +1692,27 @@ task.spawn(function()
                 local ch = lp.Character
                 local hum = ch and ch:FindFirstChildOfClass("Humanoid")
                 if hrp and hum and hum.Health > 0 then
-                    local cars = {}
-                    pcall(function()
-                        local v = Workspace:FindFirstChild("Vehicles")
-                        if v then cars = v:GetChildren() end
-                    end)
-                    if #cars > 0 then
-                        carIdx = (carIdx % #cars) + 1
-                        local car = cars[carIdx]
-                        pcall(function()
-                            local cf, _ = car:GetBoundingBox()
-                            if hum.Sit then hum.Sit = false end
-                            hrp.CFrame = CFrame.new(cf.Position + Vector3.new(5, 4, 0))
-                            hrp.Velocity = Vector3.zero
-                            hrp.RotVelocity = Vector3.zero
-                        end)
+                    breakTick = breakTick + 1
+                    if breakTick % 4 == 1 or next(breakSpots) == nil then
+                        breakSpots = breakSpotsScan()
+                    end
+                    if #breakSpots > 0 then
+                        carIdx = (carIdx % #breakSpots) + 1
+                        local pr = breakSpots[carIdx]
+                        local okPr = pcall(function() return pr.Parent ~= nil end)
+                        if not okPr then
+                            breakSpots[carIdx] = nil
+                            task.wait(0.3)
+                        else
+                            pcall(function()
+                                local pos = collectPos(pr)
+                                if pos then
+                                    if hum.Sit then hum.Sit = false end
+                                    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 4, 4))
+                                    hrp.Velocity = Vector3.zero
+                                    hrp.RotVelocity = Vector3.zero
+                                end
+                            end)
                         task.wait(0.6)
                         pcall(function()
                             if hum.Sit then hum.Sit = false end
@@ -1702,25 +1725,17 @@ task.spawn(function()
                             end)
                             pcall(function()
                                 if fireproximityprompt then
-                                    for pr, _ in pairs(collectCache) do
-                                        local ok = pcall(function() return pr.Parent ~= nil end)
-                                        if ok then
-                                            local t = string.lower(robText(pr))
-                                            if string.find(t, "break glass", 1, true) then
-                                                local pos = collectPos(pr)
-                                                local me2 = myHRP()
-                                                if pos and me2 and (me2.Position - pos).Magnitude <= 20 then
-                                                    fireproximityprompt(pr)
-                                                    S.collected = (S.collected or 0) + 1
-                                                end
-                                            end
-                                        end
+                                    local ok2 = pcall(function() return pr.Parent ~= nil end)
+                                    if ok2 then
+                                        fireproximityprompt(pr)
+                                        S.collected = (S.collected or 0) + 1
                                     end
                                 end
                             end)
                             task.wait(0.45)
                         end
                         task.wait(0.4)
+                        end
                     else
                         task.wait(1)
                     end
