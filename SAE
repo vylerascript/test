@@ -1717,20 +1717,58 @@ task.spawn(function()
                             breakSpots[carIdx] = nil
                             task.wait(0.3)
                         else
+                            -- Sanft hinfahren (kein hartes TP -> Anti-Clip "Keine Cliperkennung" TPt sonst zurueck).
+                            -- Ziel 7m daneben (nicht IM Auto), Tween ~55 studs/s, dann erst feuern.
+                            local arrived = false
                             pcall(function()
                                 local pos = collectPos(pr)
                                 if pos then
                                     if hum.Sit then hum.Sit = false end
-                                    hrp.CFrame = CFrame.new(pos + Vector3.new(0, 4, 4))
-                                    hrp.Velocity = Vector3.zero
-                                    hrp.RotVelocity = Vector3.zero
+                                    local target = pos + Vector3.new(0, 3, 7)
+                                    local dist = (hrp.Position - target).Magnitude
+                                    if dist < 9 then
+                                        arrived = true
+                                    else
+                                        local tw = nil
+                                        pcall(function()
+                                            local TS = game:GetService("TweenService")
+                                            local t = math.clamp(dist / 55, 0.8, 8)
+                                            tw = TS:Create(hrp, TweenInfo.new(t, Enum.EasingStyle.Linear), { CFrame = CFrame.new(target) })
+                                            tw:Play()
+                                        end)
+                                        local waited = 0
+                                        local need = math.clamp(dist / 55, 0.8, 8) + 0.5
+                                        while waited < need do
+                                            if not S.carTP then
+                                                pcall(function() if tw then tw:Cancel() end end)
+                                                break
+                                            end
+                                            task.wait(0.2)
+                                            waited = waited + 0.2
+                                            local okd = pcall(function()
+                                                return (hrp.Position - target).Magnitude < 9
+                                            end)
+                                            if okd and (hrp.Position - target).Magnitude < 9 then
+                                                arrived = true
+                                                break
+                                            end
+                                        end
+                                        pcall(function() if tw then tw:Cancel() end end)
+                                        pcall(function()
+                                            hrp.Velocity = Vector3.zero
+                                            hrp.RotVelocity = Vector3.zero
+                                        end)
+                                    end
                                 end
                             end)
-                        task.wait(0.6)
+                            if not arrived then
+                                task.wait(0.4)
+                            else
+                                task.wait(0.8)
                         pcall(function()
                             if hum.Sit then hum.Sit = false end
                         end)
-                        for i = 1, 7 do
+                        for i = 1, 4 do
                             if not S.carTP then break end
                             pcall(function()
                                 local fist = equipFist()
@@ -1748,6 +1786,7 @@ task.spawn(function()
                             task.wait(0.45)
                         end
                         task.wait(0.4)
+                            end
                         end
                     else
                         task.wait(1)
