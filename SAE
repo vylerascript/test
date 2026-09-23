@@ -28,7 +28,7 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     immer = false, capturing = false, bindHeld = false,
     bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
     bindName = "Right Mouse",
-    box = false, box2d = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, farm = false, farmed = 0,
+    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, farm = false, carFarm = false, farmed = 0,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
     nameColorName = "White", nameColor = Color3.fromRGB(255, 255, 255),
     boxColorName = "White", boxColor = Color3.fromRGB(235, 235, 235),
@@ -559,7 +559,7 @@ tabPlayerC.Parent = tabPlayer
 tabPlayer.Parent = frame
 
 local leftCard = mkCard(frame, 12, 132, 238, 326)
-local rightCard = mkCard(frame, 254, 132, 234, 382)
+local rightCard = mkCard(frame, 254, 132, 234, 416)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
 
@@ -679,8 +679,11 @@ local labBox = mkMiniLabel(rightCard, 334, "Box Color")
 local bBoxC = mkDotsRow(rightCard, 348,
     function() return S.boxColorName end,
     function(e) S.boxColorName = e.n S.boxColor = e.c end)
+local bTracer = mkToggle(rightCard, 382, "Tracers",
+    function() return S.tracer end,
+    function(v) S.tracer = v end)
 
-local farmCard = mkCard(frame, 12, 132, 476, 138)
+local farmCard = mkCard(frame, 12, 132, 476, 172)
 farmCard.Visible = false
 local farmHead = mkCardHead(farmCard, "AUTOFARM (stationary, kein TP)")
 local tAutoFarm = mkToggle(farmCard, 30, "Auto Farm",
@@ -695,6 +698,9 @@ local tInstantF = mkToggle(farmCard, 64, "Instant Interact",
 local tFarmESPF = mkToggle(farmCard, 98, "Farm ESP",
     function() return S.farmEsp end,
     function(v) S.farmEsp = v end)
+local tCarFarm = mkToggle(farmCard, 132, "Car Farm (walk)",
+    function() return S.carFarm end,
+    function(v) S.carFarm = v end)
 
 local playerCard = mkCard(frame, 12, 132, 476, 172)
 playerCard.Visible = false
@@ -746,11 +752,11 @@ local tSpec = mkToggle(playerCard, 132, "Spectate",
     end)
 
 local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM }
-local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC }
+local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC, bTracer }
 local leftOpen, rightOpen = true, true
 local function relayout()
     local lh = leftOpen and 326 or 26
-    local rh = rightOpen and 382 or 26
+    local rh = rightOpen and 416 or 26
     leftCard.Size = UDim2.new(0, 238, 0, lh)
     rightCard.Size = UDim2.new(0, 234, 0, rh)
     local by = 132 + math.max(lh, rh) + 8
@@ -810,7 +816,7 @@ showTab = function(name)
     elseif name == "player" then
         frame.Size = UDim2.new(0, 500, 0, 132 + 172 + 8 + 30 + 10)
     else
-        frame.Size = UDim2.new(0, 500, 0, 132 + 138 + 8 + 30 + 10)
+        frame.Size = UDim2.new(0, 500, 0, 132 + 172 + 8 + 30 + 10)
     end
 end
 tabMain.Activated:Connect(function() showTab("main") tapLog("Tab", "main") end)
@@ -1157,6 +1163,60 @@ box2dHide = function(plr)
     local f = box2dCache[plr]
     if f then for _, c in ipairs(f:GetChildren()) do c.Visible = false end end
 end
+-- TRACERS (Linien Unterkante -> Spieler, native Frames, INIQUINT-Muster)
+local tracerCache = {}
+local function tracerHide(plr)
+    local fr = tracerCache[plr]
+    if fr then fr.Visible = false end
+end
+local function tracerTick()
+    if not gui2d then return end
+    local camNow = Workspace.CurrentCamera
+    if not camNow then return end
+    local vs = camNow.ViewportSize
+    local fromX, fromY = vs.X / 2, vs.Y
+    local me = myHRP()
+    local myPos = me and me.Position or nil
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == lp then
+            tracerHide(p)
+        else
+            pcall(function()
+                local ch = p.Character
+                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+                if not (S.tracer and hum and hrp and hum.Health > 0) then tracerHide(p) return end
+                if myPos and (myPos - hrp.Position).Magnitude > S.espMaxDist then tracerHide(p) return end
+                local v, on = camNow:WorldToViewportPoint(hrp.Position)
+                if not on then tracerHide(p) return end
+                local fr = tracerCache[p]
+                if not (fr and fr.Parent) then
+                    fr = Instance.new("Frame")
+                    fr.AnchorPoint = Vector2.new(0, 0.5)
+                    fr.BorderSizePixel = 0
+                    fr.Active = false
+                    fr.Visible = false
+                    fr.Parent = gui2d
+                    tracerCache[p] = fr
+                end
+                local dx, dy = v.X - fromX, v.Y - fromY
+                local len = math.sqrt(dx * dx + dy * dy)
+                if len < 4 then tracerHide(p) return end
+                local gun = playerGun(p)
+                local col = (shared.locked == p) and Color3.fromRGB(255, 255, 255)
+                    or (gun ~= nil and Color3.fromRGB(255, 150, 40) or S.espColor)
+                fr.Position = UDim2.new(0, fromX, 0, fromY)
+                fr.Size = UDim2.new(0, len, 0, 2)
+                fr.Rotation = math.deg(math.atan2(dy, dx))
+                fr.BackgroundColor3 = col
+                fr.Visible = true
+            end)
+        end
+    end
+    for plr, fr in pairs(tracerCache) do
+        if not fr.Parent or not plr.Parent then tracerCache[plr] = nil pcall(function() fr:Destroy() end) end
+    end
+end
 local function box2dTick()
     if not gui2d then return end
     local camNow = Workspace.CurrentCamera
@@ -1229,6 +1289,7 @@ RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
         return
     end
     pcall(box2dTick)
+    pcall(tracerTick)
 end)
 
 -- ESP-Loop (Tags + 3D-Box, 0.5s)
@@ -1252,6 +1313,7 @@ clearBoxes = function()
         end)
     end
     for _, plr in ipairs(Players:GetPlayers()) do box2dHide(plr) end
+    for plr, fr in pairs(tracerCache) do pcall(function() fr:Destroy() end) tracerCache[plr] = nil end
 end
 clearESP = function()
     clearTags()
@@ -1875,6 +1937,118 @@ task.spawn(function()
             end
         end)
         task.wait(1)
+    end
+end)
+
+-- CAR-FARM (walk, AFK): laeuft zum naechsten Break-Glass-Spot, feuert, naechster. Kein TP/Tween/Speed.
+local function breakSpotsScan()
+    local found = {}
+    pcall(function()
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("ProximityPrompt") then
+                if string.find(farmTextOf(d), "break glass", 1, true) then
+                    table.insert(found, d)
+                end
+            end
+            if #found >= 25 then break end
+        end
+    end)
+    return found
+end
+task.spawn(function()
+    local spots = {}
+    local tick = 0
+    while alive() do
+        pcall(function()
+            if S.carFarm then
+                local hrp = myHRP()
+                local ch = lp.Character
+                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    tick = tick + 1
+                    if tick % 4 == 1 or #spots == 0 then spots = breakSpotsScan() end
+                    local pr, bestD = nil, 1e9
+                    local myP = hrp.Position
+                    for _, cand in ipairs(spots) do
+                        pcall(function()
+                            if cand.Parent ~= nil then
+                                local host = farmHost(cand)
+                                local cp = host and host.Position or nil
+                                if cp then
+                                    local d = (myP - cp).Magnitude
+                                    if d < bestD then pr, bestD = cand, d end
+                                end
+                            end
+                        end)
+                    end
+                    if pr then
+                        local arrived = false
+                        pcall(function()
+                            local host = farmHost(pr)
+                            local pos = host and host.Position or nil
+                            if pos then
+                                if hum.Sit then hum.Sit = false end
+                                local target = pos + Vector3.new(0, 0, 6)
+                                if (hrp.Position - target).Magnitude < 9 then
+                                    arrived = true
+                                else
+                                    hum:MoveTo(target)
+                                    local waited, lastP, stuck = 0, hrp.Position, 0
+                                    local need = math.clamp(((hrp.Position - target).Magnitude) / 14, 3, 40)
+                                    while waited < need do
+                                        if not S.carFarm then
+                                            pcall(function() hum:MoveTo(hrp.Position) end)
+                                            break
+                                        end
+                                        task.wait(0.5)
+                                        waited = waited + 0.5
+                                        local nowP = hrp.Position
+                                        if (nowP - lastP).Magnitude < 1.5 then
+                                            stuck = stuck + 1
+                                            pcall(function() hum.Jump = true end)
+                                            hum:MoveTo(target)
+                                        else
+                                            stuck = 0
+                                        end
+                                        lastP = nowP
+                                        if (nowP - target).Magnitude < 9 then arrived = true break end
+                                        if stuck >= 6 then break end
+                                        if hum.Sit then hum.Sit = false end
+                                    end
+                                    pcall(function() hum:MoveTo(hrp.Position) end)
+                                end
+                            end
+                        end)
+                        if arrived then
+                            task.wait(0.8)
+                            for i = 1, 4 do
+                                if not S.carFarm then break end
+                                pcall(function()
+                                    if fireproximityprompt then
+                                        local ok2 = pcall(function() return pr.Parent ~= nil end)
+                                        if ok2 then
+                                            fireproximityprompt(pr)
+                                            S.farmed = (S.farmed or 0) + 1
+                                        end
+                                    end
+                                end)
+                                task.wait(0.45)
+                            end
+                            task.wait(0.4)
+                        else
+                            task.wait(0.4)
+                        end
+                    else
+                        task.wait(1)
+                    end
+                else
+                    task.wait(1)
+                end
+            else
+                task.wait(1)
+            end
+        end)
+        task.wait(0.2)
     end
 end)
 
