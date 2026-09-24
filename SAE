@@ -28,7 +28,7 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     immer = false, capturing = false, bindHeld = false,
     bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
     bindName = "Right Mouse",
-    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, farm = false, carFarm = false, farmed = 0,
+    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, farm = false, carFarm = false, ghostFarm = false, farmed = 0,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
     nameColorName = "White", nameColor = Color3.fromRGB(255, 255, 255),
     boxColorName = "White", boxColor = Color3.fromRGB(235, 235, 235),
@@ -69,6 +69,7 @@ local fpsBoost
 local clearFarm
 local restorePrompts
 local specTick
+local restoreGhost
 
 -- ================= MENUe (Violett, Tabs) =================
 local ACC = Color3.fromRGB(139, 92, 246)
@@ -170,6 +171,7 @@ bX.Activated:Connect(function()
     pcall(function() clearRob() end)
     pcall(function() if clearFarm then clearFarm() end end)
     pcall(function() if restorePrompts then restorePrompts() end end)
+    pcall(function() if restoreGhost then restoreGhost() end end)
     pcall(function()
         local ch = lp.Character
         local hum = ch and ch:FindFirstChildOfClass("Humanoid")
@@ -683,7 +685,7 @@ local bTracer = mkToggle(rightCard, 382, "Tracers",
     function() return S.tracer end,
     function(v) S.tracer = v end)
 
-local farmCard = mkCard(frame, 12, 132, 476, 172)
+local farmCard = mkCard(frame, 12, 132, 476, 206)
 farmCard.Visible = false
 local farmHead = mkCardHead(farmCard, "AUTOFARM (stationary, kein TP)")
 local tAutoFarm = mkToggle(farmCard, 30, "Auto Farm",
@@ -701,6 +703,12 @@ local tFarmESPF = mkToggle(farmCard, 98, "Farm ESP",
 local tCarFarm = mkToggle(farmCard, 132, "Car Farm (walk)",
     function() return S.carFarm end,
     function(v) S.carFarm = v end)
+local tGhost = mkToggle(farmCard, 166, "Ghost Car Farm",
+    function() return S.ghostFarm end,
+    function(v)
+        S.ghostFarm = v
+        if not v and restoreGhost then pcall(restoreGhost) end
+    end)
 
 local playerCard = mkCard(frame, 12, 132, 476, 172)
 playerCard.Visible = false
@@ -816,7 +824,7 @@ showTab = function(name)
     elseif name == "player" then
         frame.Size = UDim2.new(0, 500, 0, 132 + 172 + 8 + 30 + 10)
     else
-        frame.Size = UDim2.new(0, 500, 0, 132 + 172 + 8 + 30 + 10)
+        frame.Size = UDim2.new(0, 500, 0, 132 + 206 + 8 + 30 + 10)
     end
 end
 tabMain.Activated:Connect(function() showTab("main") tapLog("Tab", "main") end)
@@ -2043,6 +2051,108 @@ task.spawn(function()
                     end
                 else
                     task.wait(1)
+                end
+            else
+                task.wait(1)
+            end
+        end)
+        task.wait(0.2)
+    end
+end)
+
+-- GHOST-CAR-FARM (im Auto sitzen -> unsichtbar (nur lokal) -> Auto-TP je Rob-Spot -> feuern)
+local ghostOrig = {}
+local ghostVeh = nil
+restoreGhost = function()
+    for part, tr in pairs(ghostOrig) do
+        pcall(function()
+            if part.Parent ~= nil then part.Transparency = tr end
+        end)
+    end
+    ghostOrig = {}
+    ghostVeh = nil
+end
+local function ghostIt(m)
+    if ghostVeh ~= m then restoreGhost() end
+    ghostVeh = m
+    pcall(function()
+        for _, d in ipairs(m:GetDescendants()) do
+            if d:IsA("BasePart") and d.Transparency < 1 then
+                if ghostOrig[d] == nil then ghostOrig[d] = d.Transparency end
+                pcall(function() d.Transparency = 1 end)
+            end
+        end
+    end)
+end
+local ghostIdx = 0
+task.spawn(function()
+    local spots = {}
+    local tick = 0
+    while alive() do
+        pcall(function()
+            if S.ghostFarm then
+                local ch = lp.Character
+                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                local seat = hum and hum.SeatPart or nil
+                if not (hum and hum.Health > 0 and seat) then
+                    -- nicht im Auto: naechsten Drive feuern (auto-sit)
+                    local hrp = myHRP()
+                    local myPos = hrp and hrp.Position or nil
+                    if myPos and fireproximityprompt then
+                        local best, bestD = nil, 20
+                        for _, d in ipairs(Workspace:GetDescendants()) do
+                            if d:IsA("ProximityPrompt") then
+                                local t = farmTextOf(d)
+                                if string.find(t, "drive", 1, true) then
+                                    local host = farmHost(d)
+                                    local pos = host and host.Position or nil
+                                    if pos then
+                                        local dd = (myPos - pos).Magnitude
+                                        if dd < bestD then best, bestD = d, dd end
+                                    end
+                                end
+                            end
+                        end
+                        if best then pcall(function() fireproximityprompt(best) end) end
+                    end
+                    task.wait(1.5)
+                else
+                    local m = seat:FindFirstAncestorOfClass("Model")
+                    if m then
+                        ghostIt(m)
+                        tick = tick + 1
+                        if tick % 4 == 1 or #spots == 0 then spots = breakSpotsScan() end
+                        if #spots > 0 then
+                            ghostIdx = (ghostIdx % #spots) + 1
+                            local pr = spots[ghostIdx]
+                            local okPr = pcall(function() return pr.Parent ~= nil end)
+                            if okPr then
+                                local host = farmHost(pr)
+                                local pos = host and host.Position or nil
+                                if pos then
+                                    pcall(function() m:PivotTo(CFrame.new(pos + Vector3.new(0, 4, 7))) end)
+                                    task.wait(0.7)
+                                    for i = 1, 5 do
+                                        if not S.ghostFarm then break end
+                                        pcall(function()
+                                            if fireproximityprompt then
+                                                local ok2 = pcall(function() return pr.Parent ~= nil end)
+                                                if ok2 then
+                                                    fireproximityprompt(pr)
+                                                    S.farmed = (S.farmed or 0) + 1
+                                                end
+                                            end
+                                        end)
+                                        task.wait(0.4)
+                                    end
+                                end
+                            end
+                        else
+                            task.wait(1)
+                        end
+                    else
+                        task.wait(1)
+                    end
                 end
             else
                 task.wait(1)
