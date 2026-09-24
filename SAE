@@ -2060,7 +2060,7 @@ task.spawn(function()
     end
 end)
 
--- GHOST-CAR-FARM (im Auto sitzen -> unsichtbar (nur lokal) -> Auto-TP je Rob-Spot -> feuern)
+-- GHOST-CAR-FARM (hin-TP im Sitz -> AUSSTEIGEN (normal stehen) -> Faust+Prompt -> wieder einsteigen)
 local ghostOrig = {}
 local ghostCollide = {}
 local ghostVeh = nil
@@ -2096,6 +2096,18 @@ local function ghostIt(m)
             end
         end
     end)
+end
+local function equipFist()
+    local ch = lp.Character
+    if not ch then return nil end
+    local hum = ch:FindFirstChildOfClass("Humanoid")
+    local fist = ch:FindFirstChild("Fist")
+    if not fist then
+        local bp = lp:FindFirstChildOfClass("Backpack")
+        fist = bp and bp:FindFirstChild("Fist")
+        if fist and hum then pcall(function() hum:EquipTool(fist) end) end
+    end
+    return fist
 end
 local ghostIdx = 0
 task.spawn(function()
@@ -2177,10 +2189,34 @@ task.spawn(function()
                                 local host = farmHost(pr)
                                 local pos = host and host.Position or nil
                                 if pos then
+                                    -- hin-TP (im Sitz, Bypass), dann normal HINSTELLEN
                                     pcall(function() m:PivotTo(CFrame.new(pos + Vector3.new(0, 2, 4))) end)
                                     task.wait(0.7)
+                                    pcall(function() hum.Sit = false end)
+                                    task.wait(0.6)
+                                    -- Fenster anschauen + Faust + Prompt (8x ~ Hold abdecken)
+                                    pcall(function()
+                                        local hrp = myHRP()
+                                        if hrp then
+                                            local best, bestD = nil, 18
+                                            for _, d in ipairs(Workspace:GetDescendants()) do
+                                                if d:IsA("BasePart") then
+                                                    local ln = string.lower(d.Name)
+                                                    if string.find(ln, "window", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "windshield", 1, true) then
+                                                        local dd = (hrp.Position - d.Position).Magnitude
+                                                        if dd < bestD then best, bestD = d, dd end
+                                                    end
+                                                end
+                                            end
+                                            if best then
+                                                hrp.CFrame = CFrame.new(hrp.Position, best.Position)
+                                            end
+                                        end
+                                    end)
+                                    local fist = equipFist()
                                     for i = 1, 8 do
                                         if not S.ghostFarm then break end
+                                        pcall(function() if fist then fist:Activate() end end)
                                         pcall(function()
                                             if fireproximityprompt then
                                                 local ok2 = pcall(function() return pr.Parent ~= nil end)
@@ -2190,8 +2226,55 @@ task.spawn(function()
                                                 end
                                             end
                                         end)
-                                        task.wait(0.4)
+                                        task.wait(0.45)
                                     end
+                                    -- Loot in Nähe mitnehmen (take/collect)
+                                    pcall(function()
+                                        if fireproximityprompt then
+                                            local hrp = myHRP()
+                                            local myP = hrp and hrp.Position or nil
+                                            if myP then
+                                                for _, pr2 in ipairs(farmFireScan()) do
+                                                    local ok3 = pcall(function() return pr2.Parent ~= nil end)
+                                                    if ok3 then
+                                                        local t = farmTextOf(pr2)
+                                                        if string.find(t, "take", 1, true) or string.find(t, "collect", 1, true) or string.find(t, "claim", 1, true) then
+                                                            local h2 = farmHost(pr2)
+                                                            local p2 = h2 and h2.Position or nil
+                                                            if p2 and (myP - p2).Magnitude <= 14 then
+                                                                fireproximityprompt(pr2)
+                                                                S.farmed = (S.farmed or 0) + 1
+                                                            end
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end)
+                                    -- WIEDER EINSTEIGEN (eigener Roller steht daneben)
+                                    pcall(function()
+                                        if fireproximityprompt then
+                                            local hrp = myHRP()
+                                            local myP = hrp and hrp.Position or nil
+                                            if myP then
+                                                local best, bestD = nil, 18
+                                                for _, d in ipairs(Workspace:GetDescendants()) do
+                                                    if d:IsA("ProximityPrompt") then
+                                                        if string.find(farmTextOf(d), "drive", 1, true) then
+                                                            local h2 = farmHost(d)
+                                                            local p2 = h2 and h2.Position or nil
+                                                            if p2 then
+                                                                local dd = (myP - p2).Magnitude
+                                                                if dd < bestD then best, bestD = d, dd end
+                                                            end
+                                                        end
+                                                    end
+                                                end
+                                                if best then fireproximityprompt(best) end
+                                            end
+                                        end
+                                    end)
+                                    task.wait(0.6)
                                 end
                             end
                         else
