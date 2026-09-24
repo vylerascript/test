@@ -2064,28 +2064,16 @@ end)
 
 -- GHOST-CAR-FARM (hin-TP im Sitz -> AUSSTEIGEN (normal stehen) -> Faust+Prompt -> wieder einsteigen)
 local ghostOrig = {}
-local ghostCollide = {}
-local ghostAnchor = {}
 local ghostVeh = nil
+-- NUR Transparency (lokal, repliziert nie). CanCollide/Anchored fassen wir NICHT
+-- an (repliziert -> "No clip Erkennung"). Collision hält Roller am Boden.
 restoreGhost = function()
     for part, tr in pairs(ghostOrig) do
         pcall(function()
             if part.Parent ~= nil then part.Transparency = tr end
         end)
     end
-    for part, cc in pairs(ghostCollide) do
-        pcall(function()
-            if part.Parent ~= nil then part.CanCollide = cc end
-        end)
-    end
-    for part, an in pairs(ghostAnchor) do
-        pcall(function()
-            if part.Parent ~= nil then part.Anchored = an end
-        end)
-    end
     ghostOrig = {}
-    ghostCollide = {}
-    ghostAnchor = {}
     ghostVeh = nil
 end
 local function ghostIt(m)
@@ -2093,19 +2081,9 @@ local function ghostIt(m)
     ghostVeh = m
     pcall(function()
         for _, d in ipairs(m:GetDescendants()) do
-            if d:IsA("BasePart") then
-                if d.Transparency < 1 then
-                    if ghostOrig[d] == nil then ghostOrig[d] = d.Transparency end
-                    pcall(function() d.Transparency = 1 end)
-                end
-                if d.CanCollide then
-                    if ghostCollide[d] == nil then ghostCollide[d] = d.CanCollide end
-                    pcall(function() d.CanCollide = false end)
-                end
-                if not d.Anchored then
-                    if ghostAnchor[d] == nil then ghostAnchor[d] = d.Anchored end
-                    pcall(function() d.Anchored = true end)
-                end
+            if d:IsA("BasePart") and d.Transparency < 1 then
+                if ghostOrig[d] == nil then ghostOrig[d] = d.Transparency end
+                pcall(function() d.Transparency = 1 end)
             end
         end
     end)
@@ -2147,7 +2125,7 @@ local function equipFist()
     end
     return fist
 end
--- Landeplatz: neben Rob-Auto auf Boden (nicht aufs Dach), per Raycast
+-- Landeplatz: neben Rob-Auto auf Boden, mit Freiraum-Check (nicht IN Wand/Auto)
 local function ghostLanding(pos, ignore)
     local best, bestScore = nil, 1e9
     for _, off in ipairs({ Vector3.new(5, 1, 0), Vector3.new(-5, 1, 0), Vector3.new(0, 1, 5), Vector3.new(0, 1, -5) }) do
@@ -2160,9 +2138,20 @@ local function ghostLanding(pos, ignore)
             return Workspace:Raycast(cand + Vector3.new(0, 2, 0), Vector3.new(0, -10, 0), params)
         end)
         if ok and hit and hit.Position then
-            local score = math.abs((cand.Y - hit.Position.Y)) + (cand - pos).Magnitude * 0.1
-            if (cand.Y - hit.Position.Y) >= 0 and (cand.Y - hit.Position.Y) <= 6 and score < bestScore then
-                best, bestScore = cand, score
+            local drop = cand.Y - hit.Position.Y
+            if drop >= 0 and drop <= 6 then
+                local free = false
+                pcall(function()
+                    local op = OverlapParams.new()
+                    op.FilterType = Enum.RaycastFilterType.Exclude
+                    op.FilterDescendantsInstances = ignore or {}
+                    op.MaxParts = 5
+                    free = #Workspace:GetPartBoundsInBox(CFrame.new(cand), Vector3.new(4, 4, 4), op) == 0
+                end)
+                if free then
+                    local score = drop + (cand - pos).Magnitude * 0.1
+                    if score < bestScore then best, bestScore = cand, score end
+                end
             end
         end
     end
