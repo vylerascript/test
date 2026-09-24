@@ -1542,7 +1542,7 @@ task.spawn(function()
             local ch = lp.Character
             local hum = ch and ch:FindFirstChildOfClass("Humanoid")
             if hum then
-                if S.player.antiknock then
+                if S.player.antiknock or S.ghostFarm then
                     hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
                     hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
                     hum:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
@@ -2062,6 +2062,7 @@ end)
 
 -- GHOST-CAR-FARM (im Auto sitzen -> unsichtbar (nur lokal) -> Auto-TP je Rob-Spot -> feuern)
 local ghostOrig = {}
+local ghostCollide = {}
 local ghostVeh = nil
 restoreGhost = function()
     for part, tr in pairs(ghostOrig) do
@@ -2069,7 +2070,13 @@ restoreGhost = function()
             if part.Parent ~= nil then part.Transparency = tr end
         end)
     end
+    for part, cc in pairs(ghostCollide) do
+        pcall(function()
+            if part.Parent ~= nil then part.CanCollide = cc end
+        end)
+    end
     ghostOrig = {}
+    ghostCollide = {}
     ghostVeh = nil
 end
 local function ghostIt(m)
@@ -2077,9 +2084,15 @@ local function ghostIt(m)
     ghostVeh = m
     pcall(function()
         for _, d in ipairs(m:GetDescendants()) do
-            if d:IsA("BasePart") and d.Transparency < 1 then
-                if ghostOrig[d] == nil then ghostOrig[d] = d.Transparency end
-                pcall(function() d.Transparency = 1 end)
+            if d:IsA("BasePart") then
+                if d.Transparency < 1 then
+                    if ghostOrig[d] == nil then ghostOrig[d] = d.Transparency end
+                    pcall(function() d.Transparency = 1 end)
+                end
+                if d.CanCollide then
+                    if ghostCollide[d] == nil then ghostCollide[d] = d.CanCollide end
+                    pcall(function() d.CanCollide = false end)
+                end
             end
         end
     end)
@@ -2115,13 +2128,18 @@ task.spawn(function()
                         end
                         if best then pcall(function() fireproximityprompt(best) end) end
                     end
-                    -- Kein eigenes Fahrzeug? Scooter mieten ($150, 8 Spots) als Farm-Untersatz
+                    -- Kein eigenes Fahrzeug (100m)? Scooter mieten ($150, 8 Spots) als Farm-Untersatz
                     pcall(function()
                         local hasOwn = false
                         local v = Workspace:FindFirstChild("Vehicles")
-                        if v then
+                        if v and myPos then
                             for _, c in ipairs(v:GetChildren()) do
-                                if string.find(c.Name, lp.Name, 1, true) then hasOwn = true break end
+                                if string.find(c.Name, lp.Name, 1, true) then
+                                    pcall(function()
+                                        local cf, _ = c:GetBoundingBox()
+                                        if (myPos - cf.Position).Magnitude < 100 then hasOwn = true end
+                                    end)
+                                end
                             end
                         end
                         if not hasOwn and myPos and fireproximityprompt then
@@ -2159,9 +2177,9 @@ task.spawn(function()
                                 local host = farmHost(pr)
                                 local pos = host and host.Position or nil
                                 if pos then
-                                    pcall(function() m:PivotTo(CFrame.new(pos + Vector3.new(0, 4, 7))) end)
+                                    pcall(function() m:PivotTo(CFrame.new(pos + Vector3.new(0, 2, 4))) end)
                                     task.wait(0.7)
-                                    for i = 1, 5 do
+                                    for i = 1, 8 do
                                         if not S.ghostFarm then break end
                                         pcall(function()
                                             if fireproximityprompt then
