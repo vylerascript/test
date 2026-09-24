@@ -2063,6 +2063,7 @@ end)
 -- GHOST-CAR-FARM (hin-TP im Sitz -> AUSSTEIGEN (normal stehen) -> Faust+Prompt -> wieder einsteigen)
 local ghostOrig = {}
 local ghostCollide = {}
+local ghostAnchor = {}
 local ghostVeh = nil
 restoreGhost = function()
     for part, tr in pairs(ghostOrig) do
@@ -2075,8 +2076,14 @@ restoreGhost = function()
             if part.Parent ~= nil then part.CanCollide = cc end
         end)
     end
+    for part, an in pairs(ghostAnchor) do
+        pcall(function()
+            if part.Parent ~= nil then part.Anchored = an end
+        end)
+    end
     ghostOrig = {}
     ghostCollide = {}
+    ghostAnchor = {}
     ghostVeh = nil
 end
 local function ghostIt(m)
@@ -2093,9 +2100,35 @@ local function ghostIt(m)
                     if ghostCollide[d] == nil then ghostCollide[d] = d.CanCollide end
                     pcall(function() d.CanCollide = false end)
                 end
+                if not d.Anchored then
+                    if ghostAnchor[d] == nil then ghostAnchor[d] = d.Anchored end
+                    pcall(function() d.Anchored = true end)
+                end
             end
         end
     end)
+end
+-- Drive-Suche: erst EIGENES Fahrzeug (Name), dann irgendeins
+local function findDrive(myP, maxD)
+    local best, bestD = nil, maxD or 20
+    local own, ownD = nil, maxD or 20
+    for _, d in ipairs(Workspace:GetDescendants()) do
+        if d:IsA("ProximityPrompt") then
+            if string.find(farmTextOf(d), "drive", 1, true) then
+                local host = farmHost(d)
+                local pos = host and host.Position or nil
+                if pos then
+                    local dd = (myP - pos).Magnitude
+                    if dd < bestD then best, bestD = d, dd end
+                    local m = d:FindFirstAncestorOfClass("Model")
+                    if m and string.find(m.Name, lp.Name, 1, true) and dd < ownD then
+                        own, ownD = d, dd
+                    end
+                end
+            end
+        end
+    end
+    return own or best
 end
 local function equipFist()
     local ch = lp.Character
@@ -2120,24 +2153,11 @@ task.spawn(function()
                 local hum = ch and ch:FindFirstChildOfClass("Humanoid")
                 local seat = hum and hum.SeatPart or nil
                 if not (hum and hum.Health > 0 and seat) then
-                    -- nicht im Auto: naechsten Drive feuern (auto-sit)
+                    -- nicht im Auto: EIGENEN Drive feuern (auto-sit)
                     local hrp = myHRP()
                     local myPos = hrp and hrp.Position or nil
                     if myPos and fireproximityprompt then
-                        local best, bestD = nil, 20
-                        for _, d in ipairs(Workspace:GetDescendants()) do
-                            if d:IsA("ProximityPrompt") then
-                                local t = farmTextOf(d)
-                                if string.find(t, "drive", 1, true) then
-                                    local host = farmHost(d)
-                                    local pos = host and host.Position or nil
-                                    if pos then
-                                        local dd = (myPos - pos).Magnitude
-                                        if dd < bestD then best, bestD = d, dd end
-                                    end
-                                end
-                            end
-                        end
+                        local best = findDrive(myPos, 20)
                         if best then pcall(function() fireproximityprompt(best) end) end
                     end
                     -- Kein eigenes Fahrzeug (100m)? Scooter mieten ($150, 8 Spots) als Farm-Untersatz
@@ -2251,25 +2271,13 @@ task.spawn(function()
                                             end
                                         end
                                     end)
-                                    -- WIEDER EINSTEIGEN (eigener Roller steht daneben)
+                                    -- WIEDER EINSTEIGEN (eigener Roller steht daneben, verankert)
                                     pcall(function()
                                         if fireproximityprompt then
                                             local hrp = myHRP()
                                             local myP = hrp and hrp.Position or nil
                                             if myP then
-                                                local best, bestD = nil, 18
-                                                for _, d in ipairs(Workspace:GetDescendants()) do
-                                                    if d:IsA("ProximityPrompt") then
-                                                        if string.find(farmTextOf(d), "drive", 1, true) then
-                                                            local h2 = farmHost(d)
-                                                            local p2 = h2 and h2.Position or nil
-                                                            if p2 then
-                                                                local dd = (myP - p2).Magnitude
-                                                                if dd < bestD then best, bestD = d, dd end
-                                                            end
-                                                        end
-                                                    end
-                                                end
+                                                local best = findDrive(myP, 18)
                                                 if best then fireproximityprompt(best) end
                                             end
                                         end
