@@ -2115,6 +2115,35 @@ task.spawn(function()
                         end
                         if best then pcall(function() fireproximityprompt(best) end) end
                     end
+                    -- Kein eigenes Fahrzeug? Scooter mieten ($150, 8 Spots) als Farm-Untersatz
+                    pcall(function()
+                        local hasOwn = false
+                        local v = Workspace:FindFirstChild("Vehicles")
+                        if v then
+                            for _, c in ipairs(v:GetChildren()) do
+                                if string.find(c.Name, lp.Name, 1, true) then hasOwn = true break end
+                            end
+                        end
+                        if not hasOwn and myPos and fireproximityprompt then
+                            for _, d in ipairs(Workspace:GetDescendants()) do
+                                if d:IsA("ProximityPrompt") then
+                                    local t = farmTextOf(d)
+                                    if string.find(t, "rent a scooter", 1, true) then
+                                        local host = farmHost(d)
+                                        local pos = host and host.Position or nil
+                                        if pos then
+                                            local maxD = 12
+                                            pcall(function() maxD = (d.MaxActivationDistance or 10) + 3 end)
+                                            if (myPos - pos).Magnitude <= maxD then
+                                                fireproximityprompt(d)
+                                                break
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end)
                     task.wait(1.5)
                 else
                     local m = seat:FindFirstAncestorOfClass("Model")
