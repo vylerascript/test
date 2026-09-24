@@ -2142,6 +2142,27 @@ local function equipFist()
     end
     return fist
 end
+-- Landeplatz: neben Rob-Auto auf Boden (nicht aufs Dach), per Raycast
+local function ghostLanding(pos, ignore)
+    local best, bestScore = nil, 1e9
+    for _, off in ipairs({ Vector3.new(5, 1, 0), Vector3.new(-5, 1, 0), Vector3.new(0, 1, 5), Vector3.new(0, 1, -5) }) do
+        local cand = pos + off
+        local ok, hit = pcall(function()
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = ignore or {}
+            params.IgnoreWater = true
+            return Workspace:Raycast(cand + Vector3.new(0, 2, 0), Vector3.new(0, -10, 0), params)
+        end)
+        if ok and hit and hit.Position then
+            local score = math.abs((cand.Y - hit.Position.Y)) + (cand - pos).Magnitude * 0.1
+            if (cand.Y - hit.Position.Y) >= 0 and (cand.Y - hit.Position.Y) <= 6 and score < bestScore then
+                best, bestScore = cand, score
+            end
+        end
+    end
+    return best or (pos + Vector3.new(0, 2, 4))
+end
 local ghostIdx = 0
 task.spawn(function()
     local spots = {}
@@ -2209,8 +2230,10 @@ task.spawn(function()
                                 local host = farmHost(pr)
                                 local pos = host and host.Position or nil
                                 if pos then
-                                    -- hin-TP (im Sitz, Bypass), dann normal HINSTELLEN
-                                    pcall(function() m:PivotTo(CFrame.new(pos + Vector3.new(0, 2, 4))) end)
+                                    -- hin-TP (im Sitz, Bypass): Roller neben Auto auf Boden
+                                    pcall(function()
+                                        m:PivotTo(CFrame.new(ghostLanding(pos, { lp.Character, m })))
+                                    end)
                                     task.wait(0.7)
                                     pcall(function() hum.Sit = false end)
                                     task.wait(0.6)
