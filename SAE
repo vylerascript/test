@@ -1737,10 +1737,10 @@ end)
 local farmCache = {}
 local printerCache = {}
 local FARMESP = {
-    { k = { "search trash" }, c = Color3.fromRGB(0, 220, 255), s = "Trash" },
-    { k = { "break glass" }, c = Color3.fromRGB(255, 150, 40), s = "Glass" },
-    { k = { "sell loot", "loot buyer" }, c = Color3.fromRGB(255, 210, 80), s = "Sell" },
-    { k = { "claim reward" }, c = Color3.fromRGB(180, 110, 255), s = "Claim" },
+    { k = { "search trash", "müll", "durchsuch" }, c = Color3.fromRGB(0, 220, 255), s = "Trash" },
+    { k = { "break glass", "glas", "scheibe", "einschlagen", "fenster" }, c = Color3.fromRGB(255, 150, 40), s = "Glass" },
+    { k = { "sell loot", "loot buyer", "verkauf", "beute" }, c = Color3.fromRGB(255, 210, 80), s = "Sell" },
+    { k = { "claim reward", "belohnung", "abhol" }, c = Color3.fromRGB(180, 110, 255), s = "Claim" },
 }
 local function farmTextOf(prompt)
     local a, o = "", ""
@@ -1882,7 +1882,7 @@ end)
 -- AUTO-FARM (stationaer: feuert Farm-Prompts nur in Reichweite, kein TP, kein Laufen)
 local farmFireCache = {}
 local farmFireTickN = 0
-local FARMFIRE_KEYS = { "search trash", "sell loot", "loot buyer", "claim reward", "collect", "claim", "printer", "take", "break glass", "window", "smash", "steal", "glass" }
+local FARMFIRE_KEYS = { "search trash", "müll", "durchsuch", "sell loot", "loot buyer", "verkauf", "beute", "claim reward", "belohnung", "abhol", "collect", "sammel", "claim", "printer", "take", "nehm", "nimm", "break glass", "window", "fenster", "smash", "steal", "glass", "glas", "scheibe" }
 local function farmFireScan()
     local found = {}
     pcall(function()
@@ -1893,7 +1893,8 @@ local function farmFireScan()
                     local isBreak = string.find(t, "break glass", 1, true) ~= nil
                     if (d.HoldDuration or 0) <= 1.5 or isBreak then
                         local bad = string.find(t, "buy", 1, true) or string.find(t, "shop", 1, true) or string.find(t, "purchase", 1, true) or string.find(t, "price", 1, true) or string.find(t, "ink", 1, true) or string.find(t, "moneygun", 1, true) or string.find(t, "plant c4", 1, true)
-                            or string.find(t, "sit", 1, true) or string.find(t, "drive", 1, true) or string.find(t, "trunk", 1, true) or string.find(t, "grab object", 1, true) or string.find(t, "place object", 1, true) or string.find(t, "car dealer", 1, true)
+                            or string.find(t, "sit", 1, true) or string.find(t, "drive", 1, true) or string.find(t, "fahren", 1, true) or string.find(t, "trunk", 1, true) or string.find(t, "kofferraum", 1, true) or string.find(t, "grab object", 1, true) or string.find(t, "place object", 1, true) or string.find(t, "car dealer", 1, true) or string.find(t, "händler", 1, true)
+                            or string.find(t, "kauf", 1, true) or string.find(t, "preis", 1, true)
                         if not bad then
                             for _, k in ipairs(FARMFIRE_KEYS) do
                                 if string.find(t, k, 1, true) then
@@ -1954,7 +1955,8 @@ local function breakSpotsScan()
     pcall(function()
         for _, d in ipairs(Workspace:GetDescendants()) do
             if d:IsA("ProximityPrompt") then
-                if string.find(farmTextOf(d), "break glass", 1, true) then
+                local t = farmTextOf(d)
+                if string.find(t, "break", 1, true) or string.find(t, "glas", 1, true) or string.find(t, "scheibe", 1, true) then
                     table.insert(found, d)
                 end
             end
@@ -2108,13 +2110,16 @@ local function ghostIt(m)
         end
     end)
 end
--- Drive-Suche: erst EIGENES Fahrzeug (Name), dann irgendeins
+-- Drive-Suche: erst EIGENES Fahrzeug (Name), dann irgendeins (DE+EN: drive/fahren)
+local function isDriveText(t)
+    return (string.find(t, "drive", 1, true) or string.find(t, "fahren", 1, true)) ~= nil
+end
 local function findDrive(myP, maxD)
     local best, bestD = nil, maxD or 20
     local own, ownD = nil, maxD or 20
     for _, d in ipairs(Workspace:GetDescendants()) do
         if d:IsA("ProximityPrompt") then
-            if string.find(farmTextOf(d), "drive", 1, true) then
+            if isDriveText(farmTextOf(d)) then
                 local host = farmHost(d)
                 local pos = host and host.Position or nil
                 if pos then
@@ -2178,9 +2183,10 @@ task.spawn(function()
                     -- nicht im Auto: EIGENEN Drive feuern (auto-sit)
                     local hrp = myHRP()
                     local myPos = hrp and hrp.Position or nil
+                    local gotOne = false
                     if myPos and fireproximityprompt then
                         local best = findDrive(myPos, 20)
-                        if best then pcall(function() fireproximityprompt(best) end) end
+                        if best then pcall(function() fireproximityprompt(best) end) gotOne = true end
                     end
                     -- Kein eigenes Fahrzeug (100m)? Scooter mieten ($150, 8 Spots) als Farm-Untersatz
                     pcall(function()
@@ -2200,7 +2206,7 @@ task.spawn(function()
                             for _, d in ipairs(Workspace:GetDescendants()) do
                                 if d:IsA("ProximityPrompt") then
                                     local t = farmTextOf(d)
-                                    if string.find(t, "rent a scooter", 1, true) then
+                                    if string.find(t, "rent", 1, true) or string.find(t, "scooter", 1, true) or string.find(t, "miet", 1, true) or string.find(t, "roller", 1, true) then
                                         local host = farmHost(d)
                                         local pos = host and host.Position or nil
                                         if pos then
@@ -2208,6 +2214,7 @@ task.spawn(function()
                                             pcall(function() maxD = (d.MaxActivationDistance or 10) + 3 end)
                                             if (myPos - pos).Magnitude <= maxD then
                                                 fireproximityprompt(d)
+                                                gotOne = true
                                                 break
                                             end
                                         end
@@ -2216,6 +2223,7 @@ task.spawn(function()
                             end
                         end
                     end)
+                    if not gotOne then tapLog("Ghost", "kein Auto nah (Roller weg?)") end
                     task.wait(1.5)
                 else
                     local m = seat:FindFirstAncestorOfClass("Model")
