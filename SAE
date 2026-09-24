@@ -1503,7 +1503,7 @@ task.spawn(function()
                     pcall(function() silentTxt = silentTxt .. " Target:" .. tostring(shared.locked.DisplayName or shared.locked.Name) end)
                 end
             end
-            status.Text = "Lobby:" .. total .. " SH:" .. tostring(shared.silentCalls or 0) .. " CH:" .. tostring(shared.crossN or 0) .. (S.farm and (" FM:" .. tostring(S.farmed or 0)) or "") .. "\n" .. silentTxt .. tapInfo
+            status.Text = "Lobby:" .. total .. " SH:" .. tostring(shared.silentCalls or 0) .. " CH:" .. tostring(shared.crossN or 0) .. (S.farm and (" FM:" .. tostring(S.farmed or 0)) or "") .. (S.ghostFarm and (fireproximityprompt and " FP:ok" or " FP:NIL!") or "") .. "\n" .. silentTxt .. tapInfo
             if statusDot then
                 statusDot.BackgroundColor3 = S.silent and ACC or (S.esp and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(90, 95, 115))
             end
@@ -2164,6 +2164,7 @@ local function ghostLanding(pos, ignore)
     return best or (pos + Vector3.new(0, 2, 4))
 end
 local ghostIdx = 0
+local ghostDone = {}
 task.spawn(function()
     local spots = {}
     local tick = 0
@@ -2223,8 +2224,27 @@ task.spawn(function()
                         tick = tick + 1
                         if tick % 4 == 1 or #spots == 0 then spots = breakSpotsScan() end
                         if #spots > 0 then
-                            ghostIdx = (ghostIdx % #spots) + 1
-                            local pr = spots[ghostIdx]
+                            -- nur UNBESUCHTE (5 Min Pause je Auto)
+                            local candList = {}
+                            for _, c in ipairs(spots) do
+                                local okc = pcall(function() return c.Parent ~= nil end)
+                                if okc then
+                                    local t = ghostDone[c] or 0
+                                    if os.clock() - t > 300 then table.insert(candList, c) end
+                                end
+                            end
+                            if #candList == 0 then
+                                local oldest, oldestT = nil, 1e18
+                                for _, c in ipairs(spots) do
+                                    local t = ghostDone[c] or 0
+                                    if t < oldestT then oldest, oldestT = c, t end
+                                end
+                                if oldest then candList = { oldest } end
+                            end
+                            if #candList == 0 then task.wait(1)
+                            else
+                            ghostIdx = (ghostIdx % #candList) + 1
+                            local pr = candList[ghostIdx]
                             local okPr = pcall(function() return pr.Parent ~= nil end)
                             if okPr then
                                 local host = farmHost(pr)
@@ -2294,19 +2314,34 @@ task.spawn(function()
                                             end
                                         end
                                     end)
-                                    -- WIEDER EINSTEIGEN (eigener Roller steht daneben, verankert)
+                                    -- WIEDER EINSTEIGEN (Retry, nur eigenes)
+                                    pcall(function()
+                                        ghostDone[pr] = os.clock()
+                                    end)
                                     pcall(function()
                                         if fireproximityprompt then
-                                            local hrp = myHRP()
-                                            local myP = hrp and hrp.Position or nil
-                                            if myP then
-                                                local best = findDrive(myP, 18)
-                                                if best then fireproximityprompt(best) end
+                                            for attempt = 1, 6 do
+                                                if not S.ghostFarm then break end
+                                                local seatedNow = false
+                                                pcall(function()
+                                                    local ch2 = lp.Character
+                                                    local hum2 = ch2 and ch2:FindFirstChildOfClass("Humanoid")
+                                                    seatedNow = hum2 and hum2.SeatPart ~= nil
+                                                end)
+                                                if seatedNow then break end
+                                                local hrp = myHRP()
+                                                local myP = hrp and hrp.Position or nil
+                                                if myP then
+                                                    local best = findDrive(myP, 18)
+                                                    if best then fireproximityprompt(best) end
+                                                end
+                                                task.wait(0.8)
                                             end
                                         end
                                     end)
                                     task.wait(0.6)
                                 end
+                            end
                             end
                         else
                             task.wait(1)
