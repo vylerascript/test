@@ -934,6 +934,38 @@ local function silentTarget()
     end
     return best
 end
+-- ALLE gültigen Ziele im FOV (sortiert, für Schuss-Rotation)
+local function silentTargets()
+    local camNow = Workspace.CurrentCamera
+    if not camNow then return {} end
+    local mok, m = pcall(function() return UIS:GetMouseLocation() end)
+    local mp = (mok and m) or (camNow.ViewportSize / 2)
+    local me = myHRP()
+    local myPos = me and me.Position or nil
+    local list = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= lp then
+            local tp = targetHead(p)
+            if tp then
+                local skip = false
+                if myPos and (myPos - tp.Position).Magnitude > S.aimMaxDist then skip = true end
+                if not skip and S.wallCheck and shared.blocked and shared.blocked[p] then skip = true end
+                if not skip then
+                    local v, on = camNow:WorldToViewportPoint(tp.Position)
+                    if on then
+                        local d = (Vector2.new(v.X, v.Y) - mp).Magnitude
+                        if d < S.aimFOV then table.insert(list, { head = tp, d = d }) end
+                    end
+                end
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.d < b.d end)
+    local out = {}
+    for _, e in ipairs(list) do table.insert(out, e.head) end
+    return out
+end
+shared.silentTargets = silentTargets
 local function silentHold()
     if S.immer then return true end
     if S.touchHold then return true end
@@ -965,7 +997,22 @@ task.spawn(function()
             local st = shared.S
             if st and st.silent and params and params.Origin and params.Direction and shared.silentHold() then
                 local head = nil
-                if shared.silentCache and shared.silentCacheT and (os.clock() - shared.silentCacheT) < 0.2 then
+                -- Rotation: jeder Schuss ein anderes Ziel im FOV (trifft alle)
+                pcall(function()
+                    if shared.silentTargets then
+                        local list = shared.silentTargets()
+                        if list and #list > 0 then
+                            shared.silentRot = ((shared.silentRot or 0) % #list) + 1
+                            local h = list[shared.silentRot]
+                            if h then
+                                local ch = h.Parent
+                                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                                if hum and hum.Health > 0 then head = h end
+                            end
+                        end
+                    end
+                end)
+                if not head and shared.silentCache and shared.silentCacheT and (os.clock() - shared.silentCacheT) < 0.2 then
                     pcall(function()
                         local ch = shared.silentCache.Parent
                         local hum = ch and ch:FindFirstChildOfClass("Humanoid")
