@@ -2306,8 +2306,26 @@ local function ghostSeated(seat, hum)
         if oldest then candList = { oldest } end
     end
     if #candList == 0 then task.wait(1) return end
-    ghostIdx = (ghostIdx % #candList) + 1
-    local pr = candList[ghostIdx]
+    -- NAECHSTER Spot (kein Round-Robin quer über Map)
+    local pr, bestD = nil, 1e9
+    do
+        local hrp0 = myHRP()
+        local myP0 = hrp0 and hrp0.Position or nil
+        for _, c in ipairs(candList) do
+            pcall(function()
+                if c.Parent ~= nil and myP0 then
+                    local h0 = farmHost(c)
+                    local p0 = h0 and h0.Position or nil
+                    if p0 then
+                        local dd = (myP0 - p0).Magnitude
+                        if dd < bestD then pr, bestD = c, dd end
+                    end
+                end
+            end)
+        end
+    end
+    if not pr then return end
+    tapLog("Ghost", "fahre " .. math.floor(bestD) .. "m")
     local okPr = pcall(function() return pr.Parent ~= nil end)
     if not okPr then return end
     local host = farmHost(pr)
