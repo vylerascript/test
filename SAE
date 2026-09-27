@@ -89,6 +89,7 @@ end
 local root = guiRoot()
 local function sweepGui()
     local names = { "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_PDUMP", "SLR_LOG", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }
+    -- NOTE: SLR_Touch bleibt in Sweep-Liste (räumt alten Button weg)
     local roots = { root }
     pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
     pcall(function()
@@ -703,7 +704,7 @@ local tFarmESPF = mkToggle(farmCard, 98, "Farm ESP",
 local tCarFarm = mkToggle(farmCard, 132, "Car Farm (walk)",
     function() return S.carFarm end,
     function(v) S.carFarm = v end)
-local tGhost = mkToggle(farmCard, 166, "Ghost Car Farm",
+local tGhost = mkToggle(farmCard, 166, "Car Farm (drive)",
     function() return S.ghostFarm end,
     function(v)
         S.ghostFarm = v
@@ -831,39 +832,7 @@ tabMain.Activated:Connect(function() showTab("main") tapLog("Tab", "main") end)
 tabFarm.Activated:Connect(function() showTab("farm") tapLog("Tab", "farm") end)
 tabPlayer.Activated:Connect(function() showTab("player") tapLog("Tab", "player") end)
 
--- AIM-Touch-Knopf (Boden rechts)
-pcall(function()
-    pcall(function() local old = root:FindFirstChild("SLR_Touch") if old then old:Destroy() end end)
-    local touch = Instance.new("ScreenGui")
-    touch.Name = "SLR_Touch"
-    touch.ResetOnSpawn = false
-    touch.Parent = root
-    local ab = Instance.new("TextButton")
-    ab.Size = UDim2.new(0, 96, 0, 96)
-    ab.Position = UDim2.new(1, -116, 1, -116)
-    ab.Text = "AIM"
-    ab.TextSize = 20
-    ab.BackgroundColor3 = ACC
-    ab.BackgroundTransparency = 0.25
-    ab.TextColor3 = Color3.fromRGB(255, 255, 255)
-    ab.BorderSizePixel = 0
-    local abc = Instance.new("UICorner")
-    abc.CornerRadius = UDim.new(1, 0)
-    abc.Parent = ab
-    ab.Parent = touch
-    ab.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
-            S.touchHold = true
-            ab.BackgroundTransparency = 0
-        end
-    end)
-    ab.InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
-            S.touchHold = false
-            ab.BackgroundTransparency = 0.25
-        end
-    end)
-end)
+-- (AIM-Touch-Button entfernt auf User-Wunsch)
 
 status.Text = "v3 menu ok - features starten..."
 warn("[SLR] boot v3 menu ok")
@@ -938,21 +907,29 @@ local function silentTarget()
     local vs = camNow.ViewportSize
     local mok, m = pcall(function() return UIS:GetMouseLocation() end)
     local mp = (mok and m) or (vs / 2)
-    local best, bestD = nil, S.aimFOV
     local me = myHRP()
     local myPos = me and me.Position or nil
+    local function okHead(p, tp)
+        if not tp then return false end
+        if myPos and (myPos - tp.Position).Magnitude > S.aimMaxDist then return false end
+        if S.wallCheck and shared.blocked and shared.blocked[p] then return false end
+        local v, on = camNow:WorldToViewportPoint(tp.Position)
+        if not on then return false end
+        return true, (Vector2.new(v.X, v.Y) - mp).Magnitude
+    end
+    -- sticky: Lock behalten solange gültig + im FOV
+    if shared.locked then
+        local tp = targetHead(shared.locked)
+        local ok, d = okHead(shared.locked, tp)
+        if ok and d < S.aimFOV then return tp end
+        shared.locked = nil
+    end
+    local best, bestD = nil, S.aimFOV
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= lp then
             local tp = targetHead(p)
-            if tp then
-                if not (myPos and (myPos - tp.Position).Magnitude > S.aimMaxDist) then
-                    local v, on = camNow:WorldToViewportPoint(tp.Position)
-                    if on then
-                        local d = (Vector2.new(v.X, v.Y) - mp).Magnitude
-                        if d < bestD then best, bestD = tp, d end
-                    end
-                end
-            end
+            local ok, d = okHead(p, tp)
+            if ok and d < bestD then best, bestD = tp, d end
         end
     end
     return best
@@ -987,9 +964,28 @@ task.spawn(function()
             shared.silentCalls = (shared.silentCalls or 0) + 1
             local st = shared.S
             if st and st.silent and params and params.Origin and params.Direction and shared.silentHold() then
-                local head = shared.silentTarget()
+                local head = nil
+                if shared.silentCache and shared.silentCacheT and (os.clock() - shared.silentCacheT) < 0.2 then
+                    pcall(function()
+                        local ch = shared.silentCache.Parent
+                        local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                        if hum and hum.Health > 0 then head = shared.silentCache end
+                    end)
+                end
+                if not head then head = shared.silentTarget() end
                 if head then
-                    params.Direction = (head.Position - params.Origin).Unit
+                    local aimP = head.Position
+                    pcall(function()
+                        local ch = head.Parent
+                        local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            local dist = (aimP - params.Origin).Magnitude
+                            local lead = hrp.Velocity * math.clamp(dist / 900, 0, 0.5)
+                            if lead.Magnitude > 15 then lead = lead.Unit * 15 end
+                            aimP = aimP + lead
+                        end
+                    end)
+                    params.Direction = (aimP - params.Origin).Unit
                     local plr = head.Parent and game:GetService("Players"):GetPlayerFromCharacter(head.Parent)
                     if plr then shared.locked = plr end
                 end
@@ -1291,6 +1287,43 @@ local function box2dTick()
         if not f.Parent or not plr.Parent then box2dCache[plr] = nil pcall(function() f:Destroy() end) end
     end
 end
+-- SILENT-CACHE (pro Frame: Lock sofort frisch + Raute folgt ohne 0.5s-Lag)
+local function silentCacheTick()
+    if S.silent and shared.silentTarget then
+        local ok, head = pcall(shared.silentTarget)
+        if ok and head then
+            shared.silentCache = head
+            shared.silentCacheT = os.clock()
+        else
+            shared.silentCache = nil
+        end
+    else
+        shared.silentCache = nil
+    end
+    if fovHud then
+        pcall(function()
+            local mk = shared.silentCache
+            local valid = false
+            if S.silent and mk then
+                pcall(function()
+                    local ch = mk.Parent
+                    local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                    valid = hum and hum.Health > 0 and mk.Parent ~= nil
+                end)
+            end
+            if valid then
+                local camNow = Workspace.CurrentCamera
+                local hv, hon = camNow:WorldToViewportPoint(mk.Position)
+                if hon then
+                    fovHud.Position = UDim2.new(0, hv.X, 0, hv.Y)
+                    fovHud.Visible = true
+                    return
+                end
+            end
+            fovHud.Visible = false
+        end)
+    end
+end
 RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
     if not alive() then
         pcall(function() RunService:UnbindFromRenderStep("SLR_2D") end)
@@ -1298,6 +1331,7 @@ RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
     end
     pcall(box2dTick)
     pcall(tracerTick)
+    pcall(silentCacheTick)
 end)
 
 -- ESP-Loop (Tags + 3D-Box, 0.5s)
@@ -1507,27 +1541,7 @@ task.spawn(function()
             if statusDot then
                 statusDot.BackgroundColor3 = S.silent and ACC or (S.esp and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(90, 95, 115))
             end
-            if fovHud then
-                pcall(function()
-                    if S.silent then
-                        local mk = shared.silentTarget and shared.silentTarget()
-                        if mk then
-                            local camNow = Workspace.CurrentCamera
-                            local hv, hon = camNow:WorldToViewportPoint(mk.Position)
-                            if hon then
-                                fovHud.Position = UDim2.new(0, hv.X, 0, hv.Y)
-                                fovHud.Visible = true
-                            else
-                                fovHud.Visible = false
-                            end
-                        else
-                            fovHud.Visible = false
-                        end
-                    else
-                        fovHud.Visible = false
-                    end
-                end)
-            end
+            -- Raute läuft jetzt pro Frame (silentCacheTick), hier nichts mehr
         end)
         if not ok then task.wait(0.5) end
         task.wait(0.5)
@@ -2157,6 +2171,63 @@ local function ghostLanding(pos, ignore)
     end
     return best or (pos + Vector3.new(0, 2, 4))
 end
+-- FAHREN (AFK, legitim): Sitz-Throttle/Steer zum Ziel, mit Richtungs-AutoFix + Rückwärts bei Stau
+local driveSign = 1
+local function driveTo(seat, pos)
+    local arrived = false
+    local t0 = os.clock()
+    local lastP, lastT, stuckT = nil, os.clock(), 0
+    local lastD = nil
+    pcall(function()
+        local hrp0 = myHRP()
+        lastP = hrp0 and hrp0.Position or nil
+    end)
+    while S.ghostFarm and (os.clock() - t0) < 60 do
+        local stop = false
+        pcall(function()
+            local ch = lp.Character
+            local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+            if not (hum and hum.SeatPart == seat and hum.Health > 0) then stop = true return end
+            local hrp = myHRP()
+            if not hrp then stop = true return end
+            local myP = hrp.Position
+            local d = (myP - pos).Magnitude
+            if d < 14 then arrived = true stop = true return end
+            local localP = seat.CFrame:PointToObjectSpace(pos)
+            local steer = math.clamp(localP.X / 8 * driveSign, -1, 1)
+            seat.Throttle = 1
+            seat.Steer = steer
+            local now = os.clock()
+            if lastD and d > lastD + 1 and (now - lastT) > 3 then
+                driveSign = -driveSign
+                lastT = now
+            elseif d < (lastD or 1e9) - 0.5 then
+                lastT = now
+            end
+            lastD = d
+            if lastP and (myP - lastP).Magnitude < 2 and (now - lastT) > 3 then
+                stuckT = stuckT + 1
+            end
+            lastP = myP
+        end)
+        if stop then break end
+        if stuckT >= 1 then
+            pcall(function()
+                seat.Throttle = -1
+                seat.Steer = 0
+            end)
+            task.wait(1.5)
+            pcall(function() seat.Throttle = 1 end)
+            stuckT = 0
+        end
+        task.wait(0.3)
+    end
+    pcall(function()
+        seat.Throttle = 0
+        seat.Steer = 0
+    end)
+    return arrived
+end
 local ghostIdx = 0
 local ghostDone = {}
 task.spawn(function()
@@ -2247,11 +2318,12 @@ task.spawn(function()
                                 local host = farmHost(pr)
                                 local pos = host and host.Position or nil
                                 if pos then
-                                    -- hin-TP (im Sitz, Bypass): Roller neben Auto auf Boden
-                                    pcall(function()
-                                        m:PivotTo(CFrame.new(ghostLanding(pos, { lp.Character, m })))
-                                    end)
-                                    task.wait(0.7)
+                                    -- HINFAHREN (im Sitz, legitim, kein TP)
+                                    local arrived = driveTo(seat, pos)
+                                    if not arrived then
+                                        ghostDone[pr] = os.clock()
+                                    else
+                                    task.wait(0.5)
                                     pcall(function() hum.Sit = false end)
                                     task.wait(0.6)
                                     -- Fenster anschauen + Faust + Prompt (8x ~ Hold abdecken)
@@ -2337,6 +2409,7 @@ task.spawn(function()
                                         end
                                     end)
                                     task.wait(0.6)
+                                    end
                                 end
                             end
                             end
