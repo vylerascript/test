@@ -2226,6 +2226,7 @@ local function driveTo(seat, pos)
         seat.Throttle = 0
         seat.Steer = 0
     end)
+    if not arrived then tapLog("Ghost", "Ziel unerreicht (fest?)") end
     return arrived
 end
 local ghostIdx = 0
@@ -2291,7 +2292,10 @@ task.spawn(function()
                         ghostIt(m)
                         tick = tick + 1
                         if tick % 4 == 1 or #spots == 0 then spots = breakSpotsScan() end
-                        if #spots > 0 then
+                        if #spots == 0 then
+                            tapLog("Ghost", "KEINE Break-Spots (falscher Ort?)")
+                            task.wait(1)
+                        else
                             -- nur UNBESUCHTE (5 Min Pause je Auto)
                             local candList = {}
                             for _, c in ipairs(spots) do
