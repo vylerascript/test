@@ -2127,6 +2127,7 @@ local ghostPaid = {}
 local ghostSpots = {}
 local ghostTick = 0
 local ghostFails = 0
+local ghostSkips = 0
 local ghostPauseUntil = 0
 local function ghostMoney()
     local m = nil
@@ -2298,7 +2299,14 @@ local function ghostSeated(seat, hum)
     end
     if not (live and glassOk) then
         ghostDone[pr] = os.clock()
-        tapLog("Ghost", "Auto Cooldown, weiter")
+        ghostSkips = ghostSkips + 1
+        if ghostSkips >= 3 then
+            ghostSkips = 0
+            ghostPauseUntil = os.clock() + 60
+            tapLog("Ghost", "nur CD-Autos! 60s Pause")
+        else
+            tapLog("Ghost", "Auto Cooldown, weiter")
+        end
         return
     end
     -- HIN-TP (Fahrzeug, 12s-Takt safe per Cadence-Test: 10s/20s = 0 Backs)
@@ -2461,6 +2469,7 @@ local function ghostSeated(seat, hum)
         end
     end)
     local fist = equipFist()
+    local paidEarly = false
     for i = 1, 8 do
         if not S.ghostFarm then break end
         pcall(function() if fist then fist:Activate() end end)
@@ -2474,6 +2483,13 @@ local function ghostSeated(seat, hum)
             end
         end)
         brakeScoot()
+        if i >= 5 then
+            pcall(function()
+                local mm = ghostMoney()
+                if m0 ~= nil and mm ~= nil and (mm - m0) > 0 then paidEarly = true end
+            end)
+            if paidEarly then break end
+        end
         task.wait(0.45)
     end
     pcall(function()
@@ -2503,6 +2519,7 @@ local function ghostSeated(seat, hum)
         local m1 = ghostMoney()
         if m0 ~= nil and m1 ~= nil and (m1 - m0) > 0 then
             ghostFails = 0
+            ghostSkips = 0
             pcall(function() ghostPaid[pr] = os.clock() end)
         else
             ghostFails = ghostFails + 1
