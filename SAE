@@ -2256,11 +2256,15 @@ local function ghostSeated(seat, hum)
         for _, c in ipairs(candList) do
             pcall(function()
                 if c.Parent ~= nil and myP0 then
-                    local h0 = farmHost(c)
-                    local p0 = h0 and h0.Position or nil
-                    if p0 then
-                        local dd = (myP0 - p0).Magnitude
-                        if dd < bestD then pr, bestD = c, dd end
+                    local en = true
+                    pcall(function() en = c.Enabled end)
+                    if en then
+                        local h0 = farmHost(c)
+                        local p0 = h0 and h0.Position or nil
+                        if p0 then
+                            local dd = (myP0 - p0).Magnitude
+                            if dd < bestD then pr, bestD = c, dd end
+                        end
                     end
                 end
             end)
@@ -2273,6 +2277,24 @@ local function ghostSeated(seat, hum)
     local host = farmHost(pr)
     local pos = host and host.Position or nil
     if not pos then return end
+    -- Cooldown-Check: Prompt aktiv + Glas noch heile, sonst skip (5 Min)
+    local live, glassOk = false, false
+    pcall(function() live = pr.Enabled end)
+    if live then
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("BasePart") then
+                local ln = string.lower(d.Name)
+                if string.find(ln, "window", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "windshield", 1, true) then
+                    if (pos - d.Position).Magnitude <= 14 then glassOk = true break end
+                end
+            end
+        end
+    end
+    if not (live and glassOk) then
+        ghostDone[pr] = os.clock()
+        tapLog("Ghost", "Auto Cooldown, weiter")
+        return
+    end
     -- HIN-TP (Fahrzeug, 12s-Takt safe per Cadence-Test: 10s/20s = 0 Backs)
     do
         local dt = os.clock() - (ghostLastTP or 0)
