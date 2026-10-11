@@ -983,29 +983,15 @@ local function silentTarget()
         if not on then return false end
         return true, (Vector2.new(v.X, v.Y) - mp).Magnitude
     end
-    -- Blick-Lock: BEWAFFNETE zuerst, dann Nächster an Bildmitte; Hysterese gegen Flackern
-    local bestA, bestAd, bestU, bestUd = nil, S.aimFOV, nil, S.aimFOV
-    local bestAp, bestUp = nil, nil
+    -- Blick-Lock: Nächster an Bildmitte; Hysterese gegen Flackern
+    local best, bestD, bestP = nil, S.aimFOV, nil
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= lp then
             local tp = targetHead(p)
             local ok, d = okHead(p, tp)
-            if ok and d < S.aimFOV then
-                local armed = false
-                pcall(function()
-                    local ch = p.Character
-                    if ch then
-                        for _, t in ipairs(ch:GetChildren()) do
-                            if t:IsA("Tool") then armed = true break end
-                        end
-                    end
-                end)
-                if armed and d < bestAd then bestA, bestAd, bestAp = tp, d, p
-                elseif not armed and d < bestUd then bestU, bestUd, bestUp = tp, d, p end
-            end
+            if ok and d < bestD then best, bestD, bestP = tp, d, p end
         end
     end
-    local best, bestD, bestP = bestA or bestU, bestA and bestAd or bestUd, bestA and bestAp or bestUp
     if best then
         -- Hysterese: altes Ziel bleibt wenn fast genauso gut (kein Flackern)
         pcall(function()
