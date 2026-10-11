@@ -1941,12 +1941,21 @@ end)
 local function breakSpotsScan()
     local found = {}
     pcall(function()
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("ProximityPrompt") then
-                local t = farmTextOf(d)
-                if string.find(t, "break", 1, true) or string.find(t, "glas", 1, true) or string.find(t, "scheibe", 1, true) then
-                    table.insert(found, d)
+        -- NUR Rob-Auto-Spots (Map.Interactions), keine Türen woanders
+        local roots = {}
+        local map = Workspace:FindFirstChild("Map")
+        local inter = map and map:FindFirstChild("Interactions")
+        if inter then table.insert(roots, inter) end
+        if #roots == 0 then table.insert(roots, Workspace) end
+        for _, root in ipairs(roots) do
+            for _, d in ipairs(root:GetDescendants()) do
+                if d:IsA("ProximityPrompt") then
+                    local t = farmTextOf(d)
+                    if string.find(t, "break", 1, true) or string.find(t, "glas", 1, true) or string.find(t, "scheibe", 1, true) then
+                        table.insert(found, d)
+                    end
                 end
+                if #found >= 25 then break end
             end
             if #found >= 25 then break end
         end
@@ -2174,7 +2183,9 @@ local function ghostSeated(seat, hum)
                 if c.Parent ~= nil and myP0 then
                     local en = true
                     pcall(function() en = c.Enabled end)
-                    if en then
+                    local fn = ""
+                    pcall(function() fn = string.lower(c:GetFullName()) end)
+                    if en and string.find(fn, "car", 1, true) then
                         local h0 = farmHost(c)
                         local p0 = h0 and h0.Position or nil
                         if p0 then
