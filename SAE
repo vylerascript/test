@@ -640,7 +640,7 @@ local bImmer, refImmer = mkToggle(leftCard, 114, "Always On",
     function(v) S.immer = v end)
 refreshImmer = function() refImmer() end
 
-local sldFov = mkSlider(leftCard, 148, "FOV", 40, 600, 5,
+local sldFov = mkSlider(leftCard, 148, "FOV", 40, 500, 5,
     function() return S.aimFOV end,
     function(v) S.aimFOV = math.floor(v) if updateFovCircle then updateFovCircle() end end,
     function(v) return tostring(math.floor(v)) end)
