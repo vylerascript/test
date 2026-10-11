@@ -905,8 +905,7 @@ local function silentTarget()
     local camNow = Workspace.CurrentCamera
     if not camNow then return nil end
     local vs = camNow.ViewportSize
-    local mok, m = pcall(function() return UIS:GetMouseLocation() end)
-    local mp = (mok and m) or (vs / 2)
+    local mp = vs / 2
     local me = myHRP()
     local myPos = me and me.Position or nil
     local function okHead(p, tp)
@@ -917,13 +916,7 @@ local function silentTarget()
         if not on then return false end
         return true, (Vector2.new(v.X, v.Y) - mp).Magnitude
     end
-    -- sticky: Lock behalten solange gültig + im FOV
-    if shared.locked then
-        local tp = targetHead(shared.locked)
-        local ok, d = okHead(shared.locked, tp)
-        if ok and d < S.aimFOV then return tp end
-        shared.locked = nil
-    end
+    -- Blick-Lock: immer der Nächste an der Bildmitte (kein Kleben, kein Springen per Zufall)
     local best, bestD = nil, S.aimFOV
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= lp then
@@ -932,40 +925,14 @@ local function silentTarget()
             if ok and d < bestD then best, bestD = tp, d end
         end
     end
+    if best then
+        local plr = best.Parent and game:GetService("Players"):GetPlayerFromCharacter(best.Parent)
+        if plr then shared.locked = plr end
+    else
+        shared.locked = nil
+    end
     return best
 end
--- ALLE gültigen Ziele im FOV (sortiert, für Schuss-Rotation)
-local function silentTargets()
-    local camNow = Workspace.CurrentCamera
-    if not camNow then return {} end
-    local mok, m = pcall(function() return UIS:GetMouseLocation() end)
-    local mp = (mok and m) or (camNow.ViewportSize / 2)
-    local me = myHRP()
-    local myPos = me and me.Position or nil
-    local list = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= lp then
-            local tp = targetHead(p)
-            if tp then
-                local skip = false
-                if myPos and (myPos - tp.Position).Magnitude > S.aimMaxDist then skip = true end
-                if not skip and S.wallCheck and shared.blocked and shared.blocked[p] then skip = true end
-                if not skip then
-                    local v, on = camNow:WorldToViewportPoint(tp.Position)
-                    if on then
-                        local d = (Vector2.new(v.X, v.Y) - mp).Magnitude
-                        if d < S.aimFOV then table.insert(list, { head = tp, d = d }) end
-                    end
-                end
-            end
-        end
-    end
-    table.sort(list, function(a, b) return a.d < b.d end)
-    local out = {}
-    for _, e in ipairs(list) do table.insert(out, e.head) end
-    return out
-end
-shared.silentTargets = silentTargets
 local function silentHold()
     if S.immer then return true end
     if S.touchHold then return true end
@@ -997,22 +964,7 @@ task.spawn(function()
             local st = shared.S
             if st and st.silent and params and params.Origin and params.Direction and shared.silentHold() then
                 local head = nil
-                -- Rotation: jeder Schuss ein anderes Ziel im FOV (trifft alle)
-                pcall(function()
-                    if shared.silentTargets then
-                        local list = shared.silentTargets()
-                        if list and #list > 0 then
-                            shared.silentRot = ((shared.silentRot or 0) % #list) + 1
-                            local h = list[shared.silentRot]
-                            if h then
-                                local ch = h.Parent
-                                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                                if hum and hum.Health > 0 then head = h end
-                            end
-                        end
-                    end
-                end)
-                if not head and shared.silentCache and shared.silentCacheT and (os.clock() - shared.silentCacheT) < 0.2 then
+                if shared.silentCache and shared.silentCacheT and (os.clock() - shared.silentCacheT) < 0.2 then
                     pcall(function()
                         local ch = shared.silentCache.Parent
                         local hum = ch and ch:FindFirstChildOfClass("Humanoid")
