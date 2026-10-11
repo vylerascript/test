@@ -2454,6 +2454,42 @@ local function ghostSeated(seat, hum)
         task.wait(0.6)
         return
     end
+    -- Rest zu Fuß (TP landet max 20m daneben): ran bis 8m ans Fenster
+    pcall(function()
+        local hrp = myHRP()
+        if hrp and (hrp.Position - pos).Magnitude > 8 then
+            local ch = lp.Character
+            local hum2 = ch and ch:FindFirstChildOfClass("Humanoid")
+            if hum2 then
+                hum2:MoveTo(pos)
+                local t0, n = os.clock(), 0
+                while S.ghostFarm and (os.clock() - t0) < 12 do
+                    task.wait(0.5)
+                    n = n + 1
+                    local ok = false
+                    pcall(function()
+                        local h3 = myHRP()
+                        if h3 and (h3.Position - pos).Magnitude <= 8 then ok = true end
+                    end)
+                    if ok then break end
+                    pcall(function()
+                        local ch3 = lp.Character
+                        local hum3 = ch3 and ch3:FindFirstChildOfClass("Humanoid")
+                        if hum3 then
+                            if n % 4 == 0 then hum3.Jump = true end
+                            hum3:MoveTo(pos)
+                        end
+                    end)
+                end
+                pcall(function()
+                    local h4 = myHRP()
+                    local ch4 = lp.Character
+                    local hum4 = ch4 and ch4:FindFirstChildOfClass("Humanoid")
+                    if h4 and hum4 then hum4:MoveTo(h4.Position) end
+                end)
+            end
+        end
+    end)
     -- Prompt nach Ausstieg noch in Reichweite? sonst gleich wieder einsteigen
     local inRange = false
     pcall(function()
