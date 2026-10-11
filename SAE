@@ -153,7 +153,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -70, 0, 24)
 title.Position = UDim2.new(0, 14, 0, 11)
 title.BackgroundTransparency = 1
-title.Text = "SLR  *  COMBAT  *  v5.2"
+title.Text = "SLR  *  COMBAT  *  v5.3"
 title.TextSize = 15
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextColor3 = TXT
@@ -2392,6 +2392,25 @@ local function ghostSeated(seat, hum)
     task.wait(0.5)
     pcall(function() hum.Sit = false end)
     task.wait(0.6)
+    -- Spieler selbst frei? (nicht in Wand gelandet) sonst gleich weiter
+    local pClear = false
+    pcall(function()
+        local hrp = myHRP()
+        if hrp then
+            local op = OverlapParams.new()
+            op.FilterType = Enum.RaycastFilterType.Exclude
+            op.FilterDescendantsInstances = { lp.Character, m }
+            op.MaxParts = 5
+            pClear = #Workspace:GetPartBoundsInBox(CFrame.new(hrp.Position + Vector3.new(0, 0.5, 0)), Vector3.new(3, 3, 3), op) == 0
+        end
+    end)
+    if not pClear then
+        tapLog("Ghost", "Spieler im Clip, weiter")
+        pcall(function() ghostDone[pr] = os.clock() end)
+        ghostResit()
+        task.wait(0.6)
+        return
+    end
     -- Prompt nach Ausstieg noch in Reichweite? sonst gleich wieder einsteigen
     local inRange = false
     pcall(function()
