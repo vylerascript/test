@@ -30,8 +30,8 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     bindName = "Right Mouse",
     box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, ghostFarm = false, farmed = 0,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
-    nameColorName = "White", nameColor = Color3.fromRGB(255, 255, 255),
-    boxColorName = "White", boxColor = Color3.fromRGB(235, 235, 235),
+    nameColorName = "Green", nameColor = Color3.fromRGB(0, 255, 130),
+    boxColorName = "Cyan", boxColor = Color3.fromRGB(0, 220, 255),
     player = { antiknock = false, afk = false, zoom = false, spec = false },
     tapMsg = "", tapT = 0 }
 shared.S = S
@@ -49,7 +49,7 @@ local ESP_COLORS = {
     { n = "Blue", c = Color3.fromRGB(90, 140, 255) },
     { n = "Purple", c = Color3.fromRGB(190, 110, 255) },
     { n = "Pink", c = Color3.fromRGB(255, 90, 200) },
-    { n = "White", c = Color3.fromRGB(235, 235, 235) },
+    { n = "Yellow", c = Color3.fromRGB(255, 220, 60) },
 }
 local WALL_RED = Color3.fromRGB(255, 70, 70)
 
@@ -1251,7 +1251,7 @@ local function tracerTick()
                 local len = math.sqrt(dx * dx + dy * dy)
                 if len < 4 then tracerHide(p) return end
                 local gun = playerGun(p)
-                local col = (shared.locked == p) and Color3.fromRGB(255, 255, 255)
+                local col = (shared.locked == p) and ACC
                     or (gun ~= nil and Color3.fromRGB(255, 150, 40) or S.espColor)
                 fr.Position = UDim2.new(0, fromX, 0, fromY)
                 fr.Size = UDim2.new(0, len, 0, 2)
@@ -1299,7 +1299,7 @@ local function box2dTick()
                 local gun = playerGun(p)
                 local armed = gun ~= nil
                 local blk = shared.blocked and shared.blocked[p]
-                local col = (shared.locked == p) and Color3.fromRGB(255, 255, 255)
+                local col = (shared.locked == p) and ACC
                     or (blk and WALL_RED)
                     or (armed and Color3.fromRGB(255, 150, 40) or S.boxColor)
                 local t = 2
@@ -1420,7 +1420,7 @@ local function updateBox(p, hrp, armed, blocked)
         bx.Parent = hrp
     end
     if shared.locked == p then
-        bx.Color3 = Color3.fromRGB(255, 255, 255)
+        bx.Color3 = ACC
         bx.Transparency = 0.35
     elseif blocked then
         bx.Color3 = WALL_RED
