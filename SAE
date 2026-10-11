@@ -2102,7 +2102,7 @@ local function ghostLanding(pos, ignore)
         if ok and hit and hit.Position and hit.Instance then
             if isCarPart(hit.Instance) then continue end
             local drop = cand.Y - hit.Position.Y
-            if drop >= 0 and drop <= 6 then
+            if drop >= 1.5 and drop <= 7 then
                 local free = false
                 pcall(function()
                     local op = OverlapParams.new()
@@ -2119,6 +2119,23 @@ local function ghostLanding(pos, ignore)
         end
     end
     return best or (pos + Vector3.new(0, 2, 4))
+end
+-- Freiraum-Sonar: rundum + hoch, Autoteile ignoriert (Dach/Wand = belegt)
+local function spotClear(m, p)
+    local dirs = { Vector3.new(3, 0, 0), Vector3.new(-3, 0, 0), Vector3.new(0, 0, 3), Vector3.new(0, 0, -3), Vector3.new(0, 2, 0) }
+    for _, d in ipairs(dirs) do
+        local bad = false
+        pcall(function()
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = { lp.Character, m }
+            params.IgnoreWater = true
+            local hit = Workspace:Raycast(p + Vector3.new(0, 1, 0), d, params)
+            if hit and hit.Instance and not isCarPart(hit.Instance) then bad = true end
+        end)
+        if bad then return false end
+    end
+    return true
 end
 local ghostLastTP = 0
 local ghostIdx = 0
@@ -2321,6 +2338,38 @@ local function ghostSeated(seat, hum)
         ghostDone[pr] = os.clock()
         tapLog("Ghost", "TP daneben, weiter")
         return
+    end
+    -- Freiraum? (nicht im Dach): sonst 3m weg versetzen, sonst skip
+    local function clearNow()
+        local okc = false
+        pcall(function()
+            local cf = m:GetBoundingBox()
+            okc = spotClear(m, cf.Position)
+        end)
+        return okc
+    end
+    if not clearNow() then
+        pcall(function()
+            local cf = m:GetBoundingBox()
+            local away = cf.Position - pos
+            away = Vector3.new(away.X, 0, away.Z)
+            if away.Magnitude < 0.5 then away = Vector3.new(4, 0, 0) end
+            local np = cf.Position + away.Unit * 3
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = { lp.Character, m }
+            params.IgnoreWater = true
+            local hit = Workspace:Raycast(np + Vector3.new(0, 5, 0), Vector3.new(0, -15, 0), params)
+            if hit and hit.Position then
+                m:PivotTo(CFrame.new(hit.Position + Vector3.new(0, 1.5, 0)))
+            end
+        end)
+        task.wait(0.5)
+        if not clearNow() then
+            ghostDone[pr] = os.clock()
+            tapLog("Ghost", "kein Platz, weiter")
+            return
+        end
     end
     task.wait(0.5)
     pcall(function() hum.Sit = false end)
