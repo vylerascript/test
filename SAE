@@ -88,7 +88,7 @@ local function guiRoot()
 end
 local root = guiRoot()
 local function sweepGui()
-    local names = { "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_PDUMP", "SLR_LOG", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }
+    local names = { "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_Logo", "SLR_PDUMP", "SLR_LOG", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }
     -- NOTE: SLR_Touch bleibt in Sweep-Liste (räumt alten Button weg)
     local roots = { root }
     pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
@@ -217,7 +217,7 @@ bX.Activated:Connect(function()
             if pg then table.insert(roots, pg) end
         end)
         for _, r in ipairs(roots) do
-            for _, n in ipairs({ "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_PDUMP", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }) do
+            for _, n in ipairs({ "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_Logo", "SLR_PDUMP", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }) do
                 pcall(function() local o = r:FindFirstChild(n) if o then o:Destroy() end end)
             end
         end
@@ -834,18 +834,40 @@ bHideC.CornerRadius = UDim.new(0, 8)
 bHideC.Parent = bHide
 bHide.Parent = frame
 local hidden = false
+-- LOGO-Button (eingeklappt-Zustand, unten links)
+local logoBtn = nil
+pcall(function()
+    pcall(function() local old = root:FindFirstChild("SLR_Logo") if old then old:Destroy() end end)
+    local logoGui = Instance.new("ScreenGui")
+    logoGui.Name = "SLR_Logo"
+    logoGui.ResetOnSpawn = false
+    logoGui.Parent = root
+    logoBtn = Instance.new("TextButton")
+    logoBtn.Size = UDim2.new(0, 46, 0, 46)
+    logoBtn.Position = UDim2.new(0, 16, 1, -62)
+    logoBtn.Text = "SLR"
+    logoBtn.TextSize = 14
+    logoBtn.BackgroundColor3 = ACC
+    logoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    logoBtn.BorderSizePixel = 0
+    logoBtn.Visible = false
+    local lbc = Instance.new("UICorner")
+    lbc.CornerRadius = UDim.new(1, 0)
+    lbc.Parent = logoBtn
+    logoBtn.Parent = logoGui
+    logoBtn.Activated:Connect(function()
+        hidden = false
+        pcall(function() logoBtn.Visible = false end)
+        pcall(function() frame.Visible = true end)
+        showTab(curTab)
+        tapLog("Menu", "expand")
+    end)
+end)
 bHide.Activated:Connect(function()
-    hidden = not hidden
-    leftCard.Visible = (not hidden) and (curTab == "main")
-    rightCard.Visible = (not hidden) and (curTab == "esp")
-    playerCard.Visible = (not hidden) and (curTab == "player")
-    farmCard.Visible = (not hidden) and (curTab == "farm")
-    tabMain.Visible = not hidden
-    tabESP.Visible = not hidden
-    tabFarm.Visible = not hidden
-    tabPlayer.Visible = not hidden
-    bHide.Text = hidden and "SHOW MENU" or "HIDE MENU"
-    tapLog("Menu", hidden and "hide" or "show")
+    hidden = true
+    pcall(function() frame.Visible = false end)
+    pcall(function() if logoBtn then logoBtn.Visible = true end end)
+    tapLog("Menu", "collapse")
 end)
 showTab = function(name)
     curTab = name
