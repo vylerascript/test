@@ -1,2557 +1,659 @@
--- SLR v3 (Menue ZUERST, Features faul danach) - kopieren + Execute in Delta.
--- Prinzip: Nach GEN/Unbinds kommt SOFORT das Menue (reine UI, keine Reads).
--- Alles Ladende (require/Scans/Loops) erst danach. Titel MUSS "v3" zeigen.
+-- Lua 5.1 / Roblox Executor (Synapse X / KRNL / Fluxus)
+-- Street Life Suite v2 — Car Loot, Tween Movement, Real Godmode, Network Invis, Silent Aim 50-500
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local UIS = game:GetService("UserInputService")
-local lp = Players.LocalPlayer
-if not lp then lp = Players.PlayerAdded:Wait() end
-pcall(function()
-    game:GetService("StarterGui"):SetCore("SendNotification", { Title = "SLR v5", Text = "v5 wird geladen...", Duration = 4 })
-end)
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local UserInputService  = game:GetService("UserInputService")
+local TweenService      = game:GetService("TweenService")
+local Workspace         = game:GetService("Workspace")
+local NetworkClient     = game:GetService("NetworkClient")
 
-_G.SLR_GEN = ((_G.SLR_GEN or 0) + 1) % 100000
-local GEN = _G.SLR_GEN
-local function alive() return GEN == _G.SLR_GEN end
-pcall(function() RunService:UnbindFromRenderStep("SLR_AIM") end)
-pcall(function() RunService:UnbindFromRenderStep("SLR_AIM") end)
-pcall(function() RunService:UnbindFromRenderStep("SLR_2D") end)
-pcall(function() RunService:UnbindFromRenderStep("SLR_STAM") end)
-pcall(function() RunService:UnbindFromRenderStep("MINI_AIM") end)
-_G.SLR = _G.SLR or {}
-local shared = _G.SLR
+local lp    = Players.LocalPlayer
+local cam   = Workspace.CurrentCamera
+local mouse = lp:GetMouse()
 
-local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
-    aimMaxDist = 500, silent = false,
-    immer = false, capturing = false, bindHeld = false,
-    bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
-    bindName = "Right Mouse",
-    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, farm = false, carFarm = false, ghostFarm = false, farmed = 0,
-    espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
-    nameColorName = "White", nameColor = Color3.fromRGB(255, 255, 255),
-    boxColorName = "White", boxColor = Color3.fromRGB(235, 235, 235),
-    player = { antiknock = false, afk = false, zoom = false, spec = false },
-    tapMsg = "", tapT = 0 }
-shared.S = S
-shared.locked = nil
-shared.blocked = {}
-shared.silentCalls = 0
-shared.crossN = 0
-
-local WEAPONS = { "glock", "cz75", "spas", "mp5", "ump", "apc", "draco", "micro", "arp", "scar", "baton", "tazer", "c4", "button", "p90", "viper", "drum", "knife", "revolver", "uzi", "deagle", "pistol", "rifle", "shotgun", "ak", "smg", "tx22", "frt", "hipoint", "hi-point", "springfield", "doublebarrel", "barrel", "fmg", "ruger", "makarov", "m4", "m16", "ar15", "ar-15", "aug", "g36", "lmg", "minigun", "rpg", "sniper", "m1911", "tec", "fiveseven", "five-seven", "deserteagle", "eagle", "mossberg", "remington", "python", "vector", "kriss", "beretta", "m9", "sig", "hk", "galil", "tsr", "triarc",
-    "mac", "m&p", "m27", "m27d", "perun", "thompson", "famas", "honeybadger", "badger", "binary", "g17", "xmas" }
-local CIVIL = { "fist", "phone", "mop", "mentos", "seed", "mask", "bag", "vest", "binocular", "grab", "licen", "shake", "tomato", "carrot", "pumpkin" }
-local ESP_COLORS = {
-    { n = "Green", c = Color3.fromRGB(0, 255, 130) },
-    { n = "Cyan", c = Color3.fromRGB(0, 220, 255) },
-    { n = "Blue", c = Color3.fromRGB(90, 140, 255) },
-    { n = "Purple", c = Color3.fromRGB(190, 110, 255) },
-    { n = "Pink", c = Color3.fromRGB(255, 90, 200) },
-    { n = "White", c = Color3.fromRGB(235, 235, 235) },
+-- ── CONFIG ───────────────────────────────────────────────────────────────────
+local cfg = {
+    silent_aim  = false,
+    silent_fov  = 150,      -- px, 50–500 step 50
+    esp         = false,
+    autofarm    = false,
+    invis       = false,
+    godmode     = false,
 }
-local WALL_RED = Color3.fromRGB(255, 70, 70)
 
--- Vorwaerts-Deklarationen
-local tapLog
-local clearESP
-local clearTags
-local clearBoxes
-local updateFovCircle
-local box2dHide
-local bHide
-local showTab
-local refreshKeyBox
-local scanCrosshair
-local serverHop
-local fpsBoost
-local clearFarm
-local restorePrompts
-local specTick
-local restoreGhost
+-- ── STATE ────────────────────────────────────────────────────────────────────
+local connections   = {}
+local esp_drawings  = {}
+local fov_circle    = nil
 
--- ================= MENUe (Violett, Tabs) =================
-local ACC = Color3.fromRGB(139, 92, 246)
-local CARD = Color3.fromRGB(22, 25, 34)
-local CARD2 = Color3.fromRGB(30, 34, 47)
-local LINE = Color3.fromRGB(62, 68, 94)
-local TXT = Color3.fromRGB(236, 239, 246)
-local DIM = Color3.fromRGB(142, 148, 170)
+-- ── UTILS ────────────────────────────────────────────────────────────────────
+local function get_char()  return lp.Character end
+local function get_root()  local c=get_char() return c and c:FindFirstChild("HumanoidRootPart") end
+local function get_hum()   local c=get_char() return c and c:FindFirstChildOfClass("Humanoid") end
+local function get_head(p) local c=p.Character return c and c:FindFirstChild("Head") end
+local function get_hum_p(p) local c=p.Character return c and c:FindFirstChildOfClass("Humanoid") end
+local function get_root_p(p) local c=p.Character return c and c:FindFirstChild("HumanoidRootPart") end
 
-local function guiRoot()
-    local ok, h = pcall(gethui)
-    if ok and h then return h end
-    local pg = lp:FindFirstChildOfClass("PlayerGui")
-    if pg then return pg end
-    return lp:WaitForChild("PlayerGui")
+local function world_to_vp(pos)
+    local s, on = cam:WorldToViewportPoint(pos)
+    return Vector2.new(s.X, s.Y), on
 end
-local root = guiRoot()
-local function sweepGui()
-    local names = { "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_PDUMP", "SLR_LOG", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }
-    -- NOTE: SLR_Touch bleibt in Sweep-Liste (räumt alten Button weg)
-    local roots = { root }
-    pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
-    pcall(function()
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if pg and pg ~= root then table.insert(roots, pg) end
-    end)
-    for _, r in ipairs(roots) do
-        for _, n in ipairs(names) do
-            pcall(function() local o = r:FindFirstChild(n) if o then o:Destroy() end end)
-        end
-    end
-end
-sweepGui()
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "SLR_GUI"
-gui.ResetOnSpawn = false
-gui.Parent = root
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 500, 0, 562)
-frame.Position = UDim2.new(0.5, -250, 0.5, -264)
-frame.BackgroundColor3 = Color3.fromRGB(14, 16, 22)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Draggable = true
-frame.Parent = gui
-local frameC = Instance.new("UICorner")
-frameC.CornerRadius = UDim.new(0, 10)
-frameC.Parent = frame
-local frameS = Instance.new("UIStroke")
-frameS.Color = LINE
-frameS.Transparency = 0.55
-frameS.Thickness = 1
-frameS.Parent = frame
-local accent = Instance.new("Frame")
-accent.Size = UDim2.new(1, 0, 0, 3)
-accent.BackgroundColor3 = ACC
-accent.BorderSizePixel = 0
-accent.Parent = frame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -70, 0, 24)
-title.Position = UDim2.new(0, 14, 0, 11)
-title.BackgroundTransparency = 1
-title.Text = "SLR  *  COMBAT  *  v5.1"
-title.TextSize = 15
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.TextColor3 = TXT
-title.Parent = frame
-
-local bX = Instance.new("TextButton")
-bX.Size = UDim2.new(0, 26, 0, 26)
-bX.Position = UDim2.new(1, -38, 0, 9)
-bX.Text = "X"
-bX.TextSize = 13
-bX.BackgroundColor3 = Color3.fromRGB(190, 55, 55)
-bX.TextColor3 = Color3.fromRGB(255, 255, 255)
-bX.BorderSizePixel = 0
-local bXc = Instance.new("UICorner")
-bXc.CornerRadius = UDim.new(1, 0)
-bXc.Parent = bX
-bX.Parent = frame
-bX.Activated:Connect(function()
-    pcall(function() frame.Visible = false end)
-    _G.SLR_GEN = ((_G.SLR_GEN or 0) + 1) % 100000
-    pcall(function() RunService:UnbindFromRenderStep("SLR_AIM") end)
-    pcall(function() RunService:UnbindFromRenderStep("SLR_2D") end)
-    pcall(function() RunService:UnbindFromRenderStep("SLR_STAM") end)
-    pcall(function() RunService:UnbindFromRenderStep("MINI_AIM") end)
-    pcall(function() UIS.MouseBehavior = Enum.MouseBehavior.Default end)
-    shared.locked = nil
-    pcall(function()
-        if shared.silentMod and shared.silentOrig then
-            shared.silentMod.new = shared.silentOrig
-        end
-        shared.silentInstalled = false
-        shared.blocked = {}
-    end)
-    pcall(function() clearRob() end)
-    pcall(function() if clearFarm then clearFarm() end end)
-    pcall(function() if restorePrompts then restorePrompts() end end)
-    pcall(function() if restoreGhost then restoreGhost() end end)
-    pcall(function()
-        local ch = lp.Character
-        local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-        if hum then Workspace.CurrentCamera.CameraSubject = hum end
-    end)
-    for _, p in ipairs(Players:GetPlayers()) do
-        pcall(function()
-            local ch = p.Character
-            if ch then
-                local h = ch:FindFirstChild("Head")
-                local b = h and h:FindFirstChild("SLR_Tag")
-                if b then b:Destroy() end
-                local hrp = ch:FindFirstChild("HumanoidRootPart")
-                local bx = hrp and hrp:FindFirstChild("SLR_Box")
-                if bx then bx:Destroy() end
-            end
-        end)
-    end
-    pcall(function()
-        local roots = { guiRoot() }
-        pcall(function() table.insert(roots, game:GetService("CoreGui")) end)
-        pcall(function()
-            local pg = lp:FindFirstChildOfClass("PlayerGui")
-            if pg then table.insert(roots, pg) end
-        end)
-        for _, r in ipairs(roots) do
-            for _, n in ipairs({ "SLR_GUI", "SLR_FOV", "SLR_2D", "SLR_Touch", "SLR_PDUMP", "MINI", "MINI_T", "HITB", "SL_UI", "SLR_DBG_GUI", "SLR_ESP" }) do
-                pcall(function() local o = r:FindFirstChild(n) if o then o:Destroy() end end)
+-- ── SILENT AIM ───────────────────────────────────────────────────────────────
+local function best_target()
+    local cx = cam.ViewportSize.X / 2
+    local cy = cam.ViewportSize.Y / 2
+    local center = Vector2.new(cx, cy)
+    local best_d, best_p = cfg.silent_fov, nil
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp then
+            local head = get_head(plr)
+            local hum  = get_hum_p(plr)
+            if head and hum and hum.Health > 0 then
+                local s, on = world_to_vp(head.Position)
+                if on then
+                    local d = (s - center).Magnitude
+                    if d < best_d then best_d = d; best_p = plr end
+                end
             end
         end
-        shared.logBox = nil
-    end)
-end)
-
-local statusCard = Instance.new("Frame")
-statusCard.Size = UDim2.new(1, -24, 0, 52)
-statusCard.Position = UDim2.new(0, 12, 0, 42)
-statusCard.BackgroundColor3 = Color3.fromRGB(23, 26, 35)
-statusCard.BorderSizePixel = 0
-local statusCardC = Instance.new("UICorner")
-statusCardC.CornerRadius = UDim.new(0, 8)
-statusCardC.Parent = statusCard
-statusCard.Parent = frame
-local statusDot = Instance.new("Frame")
-statusDot.Size = UDim2.new(0, 10, 0, 10)
-statusDot.Position = UDim2.new(0, 10, 0.5, -5)
-statusDot.BackgroundColor3 = Color3.fromRGB(90, 95, 115)
-statusDot.BorderSizePixel = 0
-local statusDotC = Instance.new("UICorner")
-statusDotC.CornerRadius = UDim.new(1, 0)
-statusDotC.Parent = statusDot
-statusDot.Parent = statusCard
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -36, 1, -12)
-status.Position = UDim2.new(0, 28, 0, 6)
-status.BackgroundTransparency = 1
-status.Text = "v3 menu ok - features starten..."
-status.TextSize = 12
-status.TextColor3 = Color3.fromRGB(210, 215, 230)
-status.TextWrapped = true
-status.TextYAlignment = Enum.TextYAlignment.Top
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.Parent = statusCard
-
-tapLog = function(label, val)
-    S.tapMsg = label .. "=" .. tostring(val)
-    S.tapT = os.clock()
-end
-
-local function mkCard(parent, x, y, w, h)
-    local c = Instance.new("Frame")
-    c.Size = UDim2.new(0, w, 0, h)
-    c.Position = UDim2.new(0, x, 0, y)
-    c.BackgroundColor3 = CARD
-    c.BorderSizePixel = 0
-    local cc = Instance.new("UICorner")
-    cc.CornerRadius = UDim.new(0, 8)
-    cc.Parent = c
-    local cs = Instance.new("UIStroke")
-    cs.Color = LINE
-    cs.Transparency = 0.6
-    cs.Thickness = 1
-    cs.Parent = c
-    c.Parent = parent
-    return c
-end
-
-local function mkToggle(parent, y, label, get, set)
-    local row = Instance.new("TextButton")
-    row.Size = UDim2.new(1, 0, 0, 30)
-    row.Position = UDim2.new(0, 0, 0, y)
-    row.BackgroundColor3 = CARD2
-    row.Text = ""
-    row.AutoButtonColor = true
-    row.BorderSizePixel = 0
-    local rowc = Instance.new("UICorner")
-    rowc.CornerRadius = UDim.new(0, 6)
-    rowc.Parent = row
-    row.Parent = parent
-    local lab = Instance.new("TextLabel")
-    lab.Size = UDim2.new(1, -60, 1, 0)
-    lab.Position = UDim2.new(0, 12, 0, 0)
-    lab.BackgroundTransparency = 1
-    lab.Text = label
-    lab.TextSize = 13
-    lab.TextXAlignment = Enum.TextXAlignment.Left
-    lab.TextColor3 = TXT
-    lab.Parent = row
-    local pill = Instance.new("Frame")
-    pill.Size = UDim2.new(0, 36, 0, 18)
-    pill.Position = UDim2.new(1, -44, 0.5, -9)
-    pill.BackgroundColor3 = CARD2
-    pill.BorderSizePixel = 0
-    local pillc = Instance.new("UICorner")
-    pillc.CornerRadius = UDim.new(1, 0)
-    pillc.Parent = pill
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 14, 0, 14)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.BorderSizePixel = 0
-    local knobc = Instance.new("UICorner")
-    knobc.CornerRadius = UDim.new(1, 0)
-    knobc.Parent = knob
-    knob.Parent = pill
-    pill.Parent = row
-    local function refresh()
-        local on = get()
-        pill.BackgroundColor3 = on and ACC or CARD2
-        knob.Position = on and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
     end
-    row.Activated:Connect(function() set(not get()) refresh() tapLog(label, get()) end)
-    refresh()
-    return row, refresh
+    return best_p
 end
 
-local function mkDrop(parent, y, label, items, getIdx, setIdx)
-    local wrap = Instance.new("Frame")
-    wrap.Size = UDim2.new(1, -20, 0, 46)
-    wrap.Position = UDim2.new(0, 10, 0, y)
-    wrap.BackgroundTransparency = 1
-    wrap.Parent = parent
-    local lab = Instance.new("TextLabel")
-    lab.Size = UDim2.new(1, 0, 0, 14)
-    lab.BackgroundTransparency = 1
-    lab.Text = label
-    lab.TextSize = 11
-    lab.TextXAlignment = Enum.TextXAlignment.Left
-    lab.TextColor3 = DIM
-    lab.Parent = wrap
-    local box = Instance.new("TextButton")
-    box.Size = UDim2.new(1, 0, 0, 28)
-    box.Position = UDim2.new(0, 0, 0, 16)
-    box.BackgroundColor3 = CARD2
-    box.Text = ""
-    box.BorderSizePixel = 0
-    local boxc = Instance.new("UICorner")
-    boxc.CornerRadius = UDim.new(0, 6)
-    boxc.Parent = box
-    local val = Instance.new("TextLabel")
-    val.Size = UDim2.new(1, -16, 1, 0)
-    val.Position = UDim2.new(0, 10, 0, 0)
-    val.BackgroundTransparency = 1
-    val.TextSize = 13
-    val.TextXAlignment = Enum.TextXAlignment.Left
-    val.TextColor3 = TXT
-    val.Parent = box
-    box.Parent = wrap
-    local function refresh() val.Text = items[getIdx()] end
-    box.Activated:Connect(function()
-        setIdx((getIdx() % #items) + 1)
-        refresh()
-        tapLog(label, items[getIdx()])
-    end)
-    refresh()
-    return wrap
-end
-
-local function mkSlider(parent, y, label, min, max, step, get, set, fmt)
-    local wrap = Instance.new("Frame")
-    wrap.Size = UDim2.new(1, -20, 0, 48)
-    wrap.Position = UDim2.new(0, 10, 0, y)
-    wrap.BackgroundTransparency = 1
-    wrap.Parent = parent
-    local lab = Instance.new("TextLabel")
-    lab.Size = UDim2.new(0.65, 0, 0, 16)
-    lab.BackgroundTransparency = 1
-    lab.Text = label
-    lab.TextSize = 12
-    lab.TextXAlignment = Enum.TextXAlignment.Left
-    lab.TextColor3 = DIM
-    lab.Parent = wrap
-    local val = Instance.new("TextLabel")
-    val.Size = UDim2.new(0.35, 0, 0, 16)
-    val.Position = UDim2.new(0.65, 0, 0, 0)
-    val.BackgroundTransparency = 1
-    val.TextSize = 12
-    val.TextXAlignment = Enum.TextXAlignment.Right
-    val.TextColor3 = TXT
-    val.Parent = wrap
-    local track = Instance.new("TextButton")
-    track.Size = UDim2.new(1, 0, 0, 22)
-    track.Position = UDim2.new(0, 0, 0, 20)
-    track.BackgroundTransparency = 1
-    track.Text = ""
-    track.Parent = wrap
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(1, 0, 0, 5)
-    bar.Position = UDim2.new(0, 0, 0.5, -2)
-    bar.BackgroundColor3 = CARD2
-    bar.BorderSizePixel = 0
-    local barc = Instance.new("UICorner")
-    barc.CornerRadius = UDim.new(1, 0)
-    barc.Parent = bar
-    bar.Parent = track
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new(0, 0, 1, 0)
-    fill.BackgroundColor3 = ACC
-    fill.BorderSizePixel = 0
-    local fillc = Instance.new("UICorner")
-    fillc.CornerRadius = UDim.new(1, 0)
-    fillc.Parent = fill
-    fill.Parent = bar
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 13, 0, 13)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.BorderSizePixel = 0
-    local knobc = Instance.new("UICorner")
-    knobc.CornerRadius = UDim.new(1, 0)
-    knobc.Parent = knob
-    knob.Parent = bar
-    local function render()
-        local v = get()
-        local f = (max > min) and math.clamp((v - min) / (max - min), 0, 1) or 0
-        val.Text = fmt(v)
-        fill.Size = UDim2.new(f, 0, 1, 0)
-        knob.Position = UDim2.new(f, -6, 0.5, -6)
-    end
-    local dragging = false
-    local function applyX(x)
-        local p = track.AbsolutePosition.X
-        local w = math.max(track.AbsoluteSize.X, 1)
-        local f = math.clamp((x - p) / w, 0, 1)
-        local stepped = math.floor((min + f * (max - min)) / step + 0.5) * step
-        set(math.clamp(stepped, min, max))
-        render()
-    end
-    track.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            applyX(inp.Position.X)
-        end
-    end)
-    UIS.InputChanged:Connect(function(inp)
-        if dragging and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
-            applyX(inp.Position.X)
-        end
-    end)
-    UIS.InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    render()
-    return wrap
-end
-
-local function mkDotsRow(parent, y, getName, onPick)
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, -20, 0, 24)
-    row.Position = UDim2.new(0, 10, 0, y)
-    row.BackgroundTransparency = 1
-    row.Parent = parent
-    local dots = {}
-    for i, e in ipairs(ESP_COLORS) do
-        local d = Instance.new("TextButton")
-        d.Size = UDim2.new(0, 22, 0, 22)
-        d.Position = UDim2.new(0, (i - 1) * 25, 0, 1)
-        d.Text = ""
-        d.BackgroundColor3 = e.c
-        d.BorderSizePixel = 0
-        local dc = Instance.new("UICorner")
-        dc.CornerRadius = UDim.new(1, 0)
-        dc.Parent = d
-        local ring = Instance.new("UIStroke")
-        ring.Thickness = 2
-        ring.Color = Color3.fromRGB(255, 255, 255)
-        ring.Transparency = 1
-        ring.Parent = d
-        d.Parent = row
-        d.Activated:Connect(function()
-            onPick(e)
-            for _, o in ipairs(dots) do
-                o.ring.Transparency = (o.e.n == e.n) and 0 or 1
+local mt = getrawmetatable and getrawmetatable(mouse)
+local orig_index
+if mt then
+    setreadonly(mt, false)
+    orig_index = mt.__index
+    mt.__index = function(self, key)
+        if cfg.silent_aim and (key == "Hit" or key == "Target") then
+            local t = best_target()
+            if t then
+                local h = get_head(t)
+                if h then
+                    if key == "Hit"    then return CFrame.new(h.Position) end
+                    if key == "Target" then return h end
+                end
             end
-            tapLog("Color", e.n)
-        end)
-        table.insert(dots, { e = e, ring = ring })
-    end
-    for _, o in ipairs(dots) do
-        o.ring.Transparency = (o.e.n == getName()) and 0 or 1
-    end
-    return row
-end
-
-local function mkMiniLabel(parent, y, text)
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1, -20, 0, 12)
-    l.Position = UDim2.new(0, 12, 0, y)
-    l.BackgroundTransparency = 1
-    l.Text = text
-    l.TextSize = 11
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.TextColor3 = DIM
-    l.Parent = parent
-    return l
-end
-
-local function mkCardHead(parent, text)
-    local h = Instance.new("TextButton")
-    h.Size = UDim2.new(1, 0, 0, 26)
-    h.BackgroundTransparency = 1
-    h.Text = ""
-    h.Parent = parent
-    local t = Instance.new("TextLabel")
-    t.Size = UDim2.new(1, -44, 1, 0)
-    t.Position = UDim2.new(0, 12, 0, 0)
-    t.BackgroundTransparency = 1
-    t.Text = text
-    t.TextSize = 14
-    t.TextXAlignment = Enum.TextXAlignment.Left
-    t.TextColor3 = TXT
-    t.Parent = h
-    local ch = Instance.new("TextLabel")
-    ch.Size = UDim2.new(0, 20, 1, 0)
-    ch.Position = UDim2.new(1, -24, 0, 0)
-    ch.BackgroundTransparency = 1
-    ch.Text = "-"
-    ch.TextSize = 14
-    ch.TextColor3 = DIM
-    ch.Parent = h
-    local div = Instance.new("Frame")
-    div.Size = UDim2.new(1, -24, 0, 1)
-    div.Position = UDim2.new(0, 12, 1, -1)
-    div.BackgroundColor3 = LINE
-    div.BackgroundTransparency = 0.4
-    div.BorderSizePixel = 0
-    div.Parent = h
-    return h, ch
-end
-
-local curTab = "main"
-local tabMain = Instance.new("TextButton")
-tabMain.Size = UDim2.new(0, 152, 0, 26)
-tabMain.Position = UDim2.new(0, 12, 0, 100)
-tabMain.Text = "MAIN"
-tabMain.TextSize = 13
-tabMain.BackgroundColor3 = ACC
-tabMain.TextColor3 = TXT
-tabMain.BorderSizePixel = 0
-local tabMainC = Instance.new("UICorner")
-tabMainC.CornerRadius = UDim.new(0, 8)
-tabMainC.Parent = tabMain
-tabMain.Parent = frame
-local tabFarm = Instance.new("TextButton")
-tabFarm.Size = UDim2.new(0, 152, 0, 26)
-tabFarm.Position = UDim2.new(0, 172, 0, 100)
-tabFarm.Text = "FARM"
-tabFarm.TextSize = 13
-tabFarm.BackgroundColor3 = CARD2
-tabFarm.TextColor3 = TXT
-tabFarm.BorderSizePixel = 0
-local tabFarmC = Instance.new("UICorner")
-tabFarmC.CornerRadius = UDim.new(0, 8)
-tabFarmC.Parent = tabFarm
-tabFarm.Parent = frame
-local tabPlayer = Instance.new("TextButton")
-tabPlayer.Size = UDim2.new(0, 152, 0, 26)
-tabPlayer.Position = UDim2.new(0, 332, 0, 100)
-tabPlayer.Text = "PLAYER"
-tabPlayer.TextSize = 13
-tabPlayer.BackgroundColor3 = CARD2
-tabPlayer.TextColor3 = TXT
-tabPlayer.BorderSizePixel = 0
-local tabPlayerC = Instance.new("UICorner")
-tabPlayerC.CornerRadius = UDim.new(0, 8)
-tabPlayerC.Parent = tabPlayer
-tabPlayer.Parent = frame
-
-local leftCard = mkCard(frame, 12, 132, 238, 326)
-local rightCard = mkCard(frame, 254, 132, 234, 416)
-local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
-local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
-
-local bSilent = mkToggle(leftCard, 30, "Silent Aim",
-    function() return S.silent end,
-    function(v) S.silent = v if not v then shared.locked = nil end updateFovCircle() end)
-
-local keyValBox, keyValRefresh
-local bKeyCap = Instance.new("Frame")
-bKeyCap.Size = UDim2.new(1, -20, 0, 46)
-bKeyCap.Position = UDim2.new(0, 10, 0, 64)
-bKeyCap.BackgroundTransparency = 1
-bKeyCap.Parent = leftCard
-local keyLab = Instance.new("TextLabel")
-keyLab.Size = UDim2.new(1, 0, 0, 14)
-keyLab.BackgroundTransparency = 1
-keyLab.Text = "Hold Key (tap, then press key)"
-keyLab.TextSize = 11
-keyLab.TextXAlignment = Enum.TextXAlignment.Left
-keyLab.TextColor3 = DIM
-keyLab.Parent = bKeyCap
-keyValBox = Instance.new("TextButton")
-keyValBox.Size = UDim2.new(1, 0, 0, 28)
-keyValBox.Position = UDim2.new(0, 0, 0, 16)
-keyValBox.BackgroundColor3 = CARD2
-keyValBox.Text = "KEY"
-keyValBox.TextSize = 13
-keyValBox.TextColor3 = TXT
-keyValBox.BorderSizePixel = 0
-local keyBoxC = Instance.new("UICorner")
-keyBoxC.CornerRadius = UDim.new(0, 6)
-keyBoxC.Parent = keyValBox
-keyValBox.Parent = bKeyCap
-refreshKeyBox = function()
-    keyValBox.Text = S.capturing and "..." or ("KEY: " .. tostring(S.bindName or "-"))
-end
-refreshKeyBox()
-keyValBox.Activated:Connect(function()
-    S.capturing = true
-    refreshKeyBox()
-    tapLog("KeyCapture", "on")
-end)
-local bImmer, refImmer = mkToggle(leftCard, 114, "Always On",
-    function() return S.immer end,
-    function(v) S.immer = v end)
-refreshImmer = function() refImmer() end
-
-local sldFov = mkSlider(leftCard, 148, "FOV", 40, 600, 5,
-    function() return S.aimFOV end,
-    function(v) S.aimFOV = math.floor(v) if updateFovCircle then updateFovCircle() end end,
-    function(v) return tostring(math.floor(v)) end)
-local sldDist = mkSlider(leftCard, 200, "Aimbot Distance", 25, 500, 25,
-    function() return S.aimMaxDist end,
-    function(v) S.aimMaxDist = v end,
-    function(v) return tostring(math.floor(v)) .. "m" end)
-local bHopM = Instance.new("TextButton")
-bHopM.Size = UDim2.new(1, -20, 0, 30)
-bHopM.Position = UDim2.new(0, 10, 0, 252)
-bHopM.Text = "SERVER HOP"
-bHopM.TextSize = 13
-bHopM.BackgroundColor3 = CARD2
-bHopM.TextColor3 = TXT
-bHopM.BorderSizePixel = 0
-local bHopMC = Instance.new("UICorner")
-bHopMC.CornerRadius = UDim.new(0, 8)
-bHopMC.Parent = bHopM
-bHopM.Parent = leftCard
-bHopM.Activated:Connect(function() serverHop() end)
-local bFpsM = Instance.new("TextButton")
-bFpsM.Size = UDim2.new(1, -20, 0, 30)
-bFpsM.Position = UDim2.new(0, 10, 0, 286)
-bFpsM.Text = "FPS BOOST (rejoin resets)"
-bFpsM.TextSize = 12
-bFpsM.BackgroundColor3 = CARD2
-bFpsM.TextColor3 = TXT
-bFpsM.BorderSizePixel = 0
-local bFpsMC = Instance.new("UICorner")
-bFpsMC.CornerRadius = UDim.new(0, 8)
-bFpsMC.Parent = bFpsM
-bFpsM.Parent = leftCard
-bFpsM.Activated:Connect(function() fpsBoost() end)
-
-local bESP = mkToggle(rightCard, 30, "ESP",
-    function() return S.esp end,
-    function(v) S.esp = v end)
-local bPart = mkToggle(rightCard, 64, "3D Box",
-    function() return S.box end,
-    function(v) S.box = v end)
-local bBox2d = mkToggle(rightCard, 98, "2D Box",
-    function() return S.box2d end,
-    function(v) S.box2d = v end)
-local bWall = mkToggle(rightCard, 132, "Wall Check",
-    function() return S.wallCheck end,
-    function(v) S.wallCheck = v end)
-local tRob = mkToggle(rightCard, 166, "Rob ESP",
-    function() return S.robEsp end,
-    function(v) S.robEsp = v end)
-
-local ESP_DISTS = { 50, 100, 250, 500, 1000, 2000 }
-local ESP_DIST_TXT = { "50m", "100m", "250m", "500m", "1000m", "2000m" }
-local function espIdx()
-    for k, v in ipairs(ESP_DISTS) do if v == S.espMaxDist then return k end end
-    return #ESP_DISTS
-end
-local bEspDist = mkDrop(rightCard, 200, "ESP Distance", ESP_DIST_TXT, espIdx,
-    function(i) S.espMaxDist = ESP_DISTS[i] end)
-
-local labMeter = mkMiniLabel(rightCard, 250, "Meter Color")
-local bColor = mkDotsRow(rightCard, 264,
-    function() return S.espColorName end,
-    function(e) S.espColorName = e.n S.espColor = e.c end)
-local labName = mkMiniLabel(rightCard, 292, "Name Color")
-local bNameColor = mkDotsRow(rightCard, 306,
-    function() return S.nameColorName end,
-    function(e) S.nameColorName = e.n S.nameColor = e.c end)
-local labBox = mkMiniLabel(rightCard, 334, "Box Color")
-local bBoxC = mkDotsRow(rightCard, 348,
-    function() return S.boxColorName end,
-    function(e) S.boxColorName = e.n S.boxColor = e.c end)
-local bTracer = mkToggle(rightCard, 382, "Tracers",
-    function() return S.tracer end,
-    function(v) S.tracer = v end)
-
-local farmCard = mkCard(frame, 12, 132, 476, 206)
-farmCard.Visible = false
-local farmHead = mkCardHead(farmCard, "AUTOFARM (stationary, kein TP)")
-local tAutoFarm = mkToggle(farmCard, 30, "Auto Farm",
-    function() return S.farm end,
-    function(v) S.farm = v end)
-local tInstantF = mkToggle(farmCard, 64, "Instant Interact",
-    function() return S.instant end,
-    function(v)
-        S.instant = v
-        if not v and restorePrompts then pcall(restorePrompts) end
-    end)
-local tFarmESPF = mkToggle(farmCard, 98, "Farm ESP",
-    function() return S.farmEsp end,
-    function(v) S.farmEsp = v end)
-local tCarFarm = mkToggle(farmCard, 132, "Car Farm (walk)",
-    function() return S.carFarm end,
-    function(v) S.carFarm = v end)
-local tGhost = mkToggle(farmCard, 166, "Car Farm (drive)",
-    function() return S.ghostFarm end,
-    function(v)
-        S.ghostFarm = v
-        if not v and restoreGhost then pcall(restoreGhost) end
-    end)
-
-local playerCard = mkCard(frame, 12, 132, 476, 172)
-playerCard.Visible = false
-local playerHead = mkCardHead(playerCard, "PLAYER")
-local tKnock = mkToggle(playerCard, 30, "Anti Knock",
-    function() return S.player.antiknock end,
-    function(v) S.player.antiknock = v end)
-local afkConn = nil
-local tAFK = mkToggle(playerCard, 64, "Anti AFK",
-    function() return S.player.afk end,
-    function(v)
-        S.player.afk = v
-        if v and not afkConn then
-            pcall(function()
-                afkConn = lp.Idled:Connect(function()
-                    pcall(function()
-                        local vu = game:GetService("VirtualUser")
-                        vu:CaptureController()
-                        vu:ClickButton2(Vector2.new())
-                    end)
-                end)
-            end)
-            if not afkConn then S.player.afk = false end
         end
-    end)
-local tZoom = mkToggle(playerCard, 98, "Max Zoom",
-    function() return S.player.zoom end,
-    function(v)
-        S.player.zoom = v
-        if not v and S.zoomOrig then
-            pcall(function()
-                local cam = Workspace.CurrentCamera
-                if cam then cam.MaxZoomDistance = S.zoomOrig end
-            end)
+        return orig_index(self, key)
+    end
+end
+
+-- ── FOV CIRCLE ───────────────────────────────────────────────────────────────
+if Drawing then
+    fov_circle              = Drawing.new("Circle")
+    fov_circle.Visible      = false
+    fov_circle.Color        = Color3.fromRGB(255, 255, 255)
+    fov_circle.Thickness    = 1.5
+    fov_circle.Radius       = cfg.silent_fov
+    fov_circle.Filled       = false
+    fov_circle.NumSides     = 64
+end
+
+connections["fov"] = RunService.RenderStepped:Connect(function()
+    if fov_circle then
+        fov_circle.Visible  = cfg.silent_aim
+        fov_circle.Radius   = cfg.silent_fov
+        fov_circle.Position = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+    end
+end)
+
+-- ── ESP ──────────────────────────────────────────────────────────────────────
+local function make_esp(plr)
+    if not Drawing or esp_drawings[plr] then return end
+    local box  = Drawing.new("Square")
+    box.Visible = false; box.Color = Color3.fromRGB(255,50,50)
+    box.Thickness = 1.5; box.Filled = false
+    local nm = Drawing.new("Text")
+    nm.Visible = false; nm.Color = Color3.fromRGB(255,255,255)
+    nm.Size = 13; nm.Outline = true; nm.Center = true
+    local hp = Drawing.new("Square")
+    hp.Visible = false; hp.Filled = true
+    esp_drawings[plr] = {box=box, name=nm, hp=hp}
+end
+
+local function rm_esp(plr)
+    local d = esp_drawings[plr]; if not d then return end
+    d.box:Remove(); d.name:Remove(); d.hp:Remove()
+    esp_drawings[plr] = nil
+end
+
+connections["esp"] = RunService.RenderStepped:Connect(function()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp then
+            make_esp(plr)
+            local d = esp_drawings[plr]; if not d then continue end
+            local hum  = get_hum_p(plr)
+            local root = get_root_p(plr)
+            if not cfg.esp or not root or not hum or hum.Health <= 0 then
+                d.box.Visible=false; d.name.Visible=false; d.hp.Visible=false; continue
+            end
+            local ts, on_t = world_to_vp(root.Position + Vector3.new(0,3,0))
+            local bs, on_b = world_to_vp(root.Position - Vector3.new(0,3,0))
+            if not on_t and not on_b then
+                d.box.Visible=false; d.name.Visible=false; d.hp.Visible=false; continue
+            end
+            local h  = math.abs(ts.Y - bs.Y)
+            local w  = h * 0.5
+            local x  = ts.X - w/2
+            d.box.Position = Vector2.new(x, ts.Y)
+            d.box.Size     = Vector2.new(w, h)
+            d.box.Visible  = true
+            d.name.Text     = plr.Name
+            d.name.Position = Vector2.new(ts.X, ts.Y - 16)
+            d.name.Visible  = true
+            local frac = hum.Health / hum.MaxHealth
+            local hh   = h * frac
+            d.hp.Position = Vector2.new(x - 6, ts.Y + (h - hh))
+            d.hp.Size     = Vector2.new(3, hh)
+            d.hp.Color    = Color3.fromRGB(math.floor(255*(1-frac)), math.floor(255*frac), 0)
+            d.hp.Visible  = true
         end
-    end)
-local tSpec = mkToggle(playerCard, 132, "Spectate",
-    function() return S.player.spec end,
-    function(v)
-        S.player.spec = v
-        shared.specTarget = nil
-        if not v then
-            pcall(function()
-                local ch = lp.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                if hum then Workspace.CurrentCamera.CameraSubject = hum end
-            end)
+    end
+end)
+
+Players.PlayerRemoving:Connect(rm_esp)
+
+-- ── CAR LOOT AUTOFARM ────────────────────────────────────────────────────────
+-- spoof: tween root into car seat CFrame so server sees us seated/overlapping
+-- then fire the loot remote; never raw-teleport (detected)
+
+local function find_lootable_cars()
+    local cars = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        -- seat / VehicleSeat inside a car model that has a loot prompt or value
+        if obj:IsA("VehicleSeat") or
+           (obj:IsA("Model") and (
+               obj.Name:lower():find("car")   or
+               obj.Name:lower():find("vehicle") or
+               obj.Name:lower():find("auto")
+           )) then
+            table.insert(cars, obj)
         end
-    end)
-
-local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM }
-local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC, bTracer }
-local leftOpen, rightOpen = true, true
-local function relayout()
-    local lh = leftOpen and 326 or 26
-    local rh = rightOpen and 416 or 26
-    leftCard.Size = UDim2.new(0, 238, 0, lh)
-    rightCard.Size = UDim2.new(0, 234, 0, rh)
-    local by = 132 + math.max(lh, rh) + 8
-    frame.Size = UDim2.new(0, 500, 0, by + 30 + 10)
-end
-leftHead.Activated:Connect(function()
-    leftOpen = not leftOpen
-    leftChev.Text = leftOpen and "-" or "+"
-    for _, r in ipairs(leftRows) do r.Visible = leftOpen end
-    relayout()
-end)
-rightHead.Activated:Connect(function()
-    rightOpen = not rightOpen
-    rightChev.Text = rightOpen and "-" or "+"
-    for _, r in ipairs(rightRows) do r.Visible = rightOpen end
-    relayout()
-end)
-
-local bHide = Instance.new("TextButton")
-bHide.Size = UDim2.new(0, 476, 0, 30)
-bHide.Position = UDim2.new(0, 12, 1, -40)
-bHide.Text = "HIDE MENU"
-bHide.TextSize = 13
-bHide.BackgroundColor3 = CARD2
-bHide.TextColor3 = TXT
-bHide.BorderSizePixel = 0
-local bHideC = Instance.new("UICorner")
-bHideC.CornerRadius = UDim.new(0, 8)
-bHideC.Parent = bHide
-bHide.Parent = frame
-local hidden = false
-bHide.Activated:Connect(function()
-    hidden = not hidden
-    leftCard.Visible = (not hidden) and (curTab == "main")
-    rightCard.Visible = (not hidden) and (curTab == "main")
-    playerCard.Visible = (not hidden) and (curTab == "player")
-    farmCard.Visible = (not hidden) and (curTab == "farm")
-    tabMain.Visible = not hidden
-    tabFarm.Visible = not hidden
-    tabPlayer.Visible = not hidden
-    bHide.Text = hidden and "SHOW MENU" or "HIDE MENU"
-    tapLog("Menu", hidden and "hide" or "show")
-end)
-showTab = function(name)
-    curTab = name
-    tabMain.BackgroundColor3 = (name == "main") and ACC or CARD2
-    tabFarm.BackgroundColor3 = (name == "farm") and ACC or CARD2
-    tabPlayer.BackgroundColor3 = (name == "player") and ACC or CARD2
-    if not hidden then
-        leftCard.Visible = (name == "main")
-        rightCard.Visible = (name == "main")
-        playerCard.Visible = (name == "player")
-        farmCard.Visible = (name == "farm")
     end
-    if name == "main" then
-        relayout()
-    elseif name == "player" then
-        frame.Size = UDim2.new(0, 500, 0, 132 + 172 + 8 + 30 + 10)
-    else
-        frame.Size = UDim2.new(0, 500, 0, 132 + 206 + 8 + 30 + 10)
-    end
+    return cars
 end
-tabMain.Activated:Connect(function() showTab("main") tapLog("Tab", "main") end)
-tabFarm.Activated:Connect(function() showTab("farm") tapLog("Tab", "farm") end)
-tabPlayer.Activated:Connect(function() showTab("player") tapLog("Tab", "player") end)
 
--- (AIM-Touch-Button entfernt auf User-Wunsch)
-
-status.Text = "v3 menu ok - features starten..."
-warn("[SLR] boot v3 menu ok")
-
--- ================= FEATURES (erst NACH Menue) =================
-local function myHRP()
-    local c = lp.Character
-    return c and c:FindFirstChild("HumanoidRootPart") or nil
-end
-local function isWeapon(name)
-    local n = string.lower(tostring(name or ""))
-    if string.find(n, "ammo", 1, true) then return false end
-    for _, k in ipairs(WEAPONS) do
-        if string.find(n, k, 1, true) then return true end
-    end
-    return false
-end
-local function isCivilian(name)
-    local n = string.lower(tostring(name or ""))
-    for _, k in ipairs(CIVIL) do
-        if string.find(n, k, 1, true) then return true end
-    end
-    return false
-end
-local function playerGun(plr)
-    local c = plr.Character
-    if c then
-        for _, t in ipairs(c:GetChildren()) do
-            if t:IsA("Tool") and isWeapon(t.Name) then return t.Name end
+local function find_loot_remote()
+    -- walk ReplicatedStorage for any RemoteEvent/Function whose name hints loot/money/rob
+    local RS = game:GetService("ReplicatedStorage")
+    for _, v in ipairs(RS:GetDescendants()) do
+        if (v:IsA("RemoteEvent") or v:IsA("RemoteFunction")) and (
+            v.Name:lower():find("loot")   or
+            v.Name:lower():find("rob")    or
+            v.Name:lower():find("money")  or
+            v.Name:lower():find("steal")  or
+            v.Name:lower():find("cash")   or
+            v.Name:lower():find("collect")
+        ) then
+            return v
         end
     end
     return nil
 end
-local function playerUnknownTool(plr)
-    local c = plr.Character
-    if c then
-        for _, t in ipairs(c:GetChildren()) do
-            if t:IsA("Tool") and not isWeapon(t.Name) and not isCivilian(t.Name) then return t.Name end
-        end
-    end
-    return nil
-end
-local function targetHead(plr)
-    local ch = plr and plr.Character
-    if not ch then return nil end
-    local hum = ch:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return nil end
-    return ch:FindFirstChild("Head")
-end
-shared.targetHead = targetHead
-shared.blocked = {}
-local WALL_RED = Color3.fromRGB(255, 70, 70)
-local function occluded(targetPos, ch)
-    if not S.wallCheck then return false end
-    local camNow = Workspace.CurrentCamera
-    if not camNow then return false end
-    local ok, hit = pcall(function()
-        local params = RaycastParams.new()
-        params.FilterType = Enum.RaycastFilterType.Exclude
-        params.FilterDescendantsInstances = { lp.Character, ch }
-        params.IgnoreWater = true
-        return Workspace:Raycast(camNow.CFrame.Position, targetPos - camNow.CFrame.Position, params)
-    end)
-    return ok and hit ~= nil
+
+local function tween_to(target_cf, duration)
+    local root = get_root(); if not root then return end
+    -- unanchor temporarily so tween moves us
+    local was_anchored = root.Anchored
+    root.Anchored = false
+    local tw = TweenService:Create(root, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+        CFrame = target_cf
+    })
+    tw:Play()
+    tw.Completed:Wait()
+    root.Anchored = was_anchored
 end
 
--- Silent-Install async (blockiert Start nie)
-S.silent = false
-local function silentTarget()
-    local camNow = Workspace.CurrentCamera
-    if not camNow then return nil end
-    local vs = camNow.ViewportSize
-    local mok, m = pcall(function() return UIS:GetMouseLocation() end)
-    local mp = (mok and m) or (vs / 2)
-    local me = myHRP()
-    local myPos = me and me.Position or nil
-    local function okHead(p, tp)
-        if not tp then return false end
-        if myPos and (myPos - tp.Position).Magnitude > S.aimMaxDist then return false end
-        if S.wallCheck and shared.blocked and shared.blocked[p] then return false end
-        local v, on = camNow:WorldToViewportPoint(tp.Position)
-        if not on then return false end
-        return true, (Vector2.new(v.X, v.Y) - mp).Magnitude
-    end
-    -- sticky: Lock behalten solange gültig + im FOV
-    if shared.locked then
-        local tp = targetHead(shared.locked)
-        local ok, d = okHead(shared.locked, tp)
-        if ok and d < S.aimFOV then return tp end
-        shared.locked = nil
-    end
-    local best, bestD = nil, S.aimFOV
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= lp then
-            local tp = targetHead(p)
-            local ok, d = okHead(p, tp)
-            if ok and d < bestD then best, bestD = tp, d end
-        end
-    end
-    return best
-end
--- ALLE gültigen Ziele im FOV (sortiert, für Schuss-Rotation)
-local function silentTargets()
-    local camNow = Workspace.CurrentCamera
-    if not camNow then return {} end
-    local mok, m = pcall(function() return UIS:GetMouseLocation() end)
-    local mp = (mok and m) or (camNow.ViewportSize / 2)
-    local me = myHRP()
-    local myPos = me and me.Position or nil
-    local list = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= lp then
-            local tp = targetHead(p)
-            if tp then
-                local skip = false
-                if myPos and (myPos - tp.Position).Magnitude > S.aimMaxDist then skip = true end
-                if not skip and S.wallCheck and shared.blocked and shared.blocked[p] then skip = true end
-                if not skip then
-                    local v, on = camNow:WorldToViewportPoint(tp.Position)
-                    if on then
-                        local d = (Vector2.new(v.X, v.Y) - mp).Magnitude
-                        if d < S.aimFOV then table.insert(list, { head = tp, d = d }) end
-                    end
-                end
-            end
-        end
-    end
-    table.sort(list, function(a, b) return a.d < b.d end)
-    local out = {}
-    for _, e in ipairs(list) do table.insert(out, e.head) end
-    return out
-end
-shared.silentTargets = silentTargets
-local function silentHold()
-    if S.immer then return true end
-    if S.touchHold then return true end
-    return S.bindHeld
-end
-shared.silentTarget = silentTarget
-shared.silentHold = silentHold
-task.spawn(function()
-    local Projectile = nil
-    for i = 1, 30 do
-        if shared.silentInstalled then return end
-        pcall(function()
-            local mod = game:GetService("ReplicatedStorage").Modules.GunFramework.Modules.Projectile
-            if mod then
-                local P = require(mod)
-                if P and P.new then Projectile = P end
-            end
-        end)
-        if Projectile then break end
-        task.wait(1)
-    end
-    if shared.silentInstalled then return end
-    if not (Projectile and Projectile.new) then warn("[SLR] Silent: Modul fehlt") return end
-    shared.silentMod = Projectile
-    shared.silentOrig = Projectile.new
-    Projectile.new = function(params)
-        pcall(function()
-            shared.silentCalls = (shared.silentCalls or 0) + 1
-            local st = shared.S
-            if st and st.silent and params and params.Origin and params.Direction and shared.silentHold() then
-                local head = nil
-                -- Rotation: jeder Schuss ein anderes Ziel im FOV (trifft alle)
-                pcall(function()
-                    if shared.silentTargets then
-                        local list = shared.silentTargets()
-                        if list and #list > 0 then
-                            shared.silentRot = ((shared.silentRot or 0) % #list) + 1
-                            local h = list[shared.silentRot]
-                            if h then
-                                local ch = h.Parent
-                                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                                if hum and hum.Health > 0 then head = h end
-                            end
-                        end
-                    end
-                end)
-                if not head and shared.silentCache and shared.silentCacheT and (os.clock() - shared.silentCacheT) < 0.2 then
-                    pcall(function()
-                        local ch = shared.silentCache.Parent
-                        local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                        if hum and hum.Health > 0 then head = shared.silentCache end
-                    end)
-                end
-                if not head then head = shared.silentTarget() end
-                if head then
-                    local aimP = head.Position
-                    pcall(function()
-                        local ch = head.Parent
-                        local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            local dist = (aimP - params.Origin).Magnitude
-                            local lead = hrp.Velocity * math.clamp(dist / 900, 0, 0.5)
-                            if lead.Magnitude > 15 then lead = lead.Unit * 15 end
-                            aimP = aimP + lead
-                        end
-                    end)
-                    params.Direction = (aimP - params.Origin).Unit
-                    local plr = head.Parent and game:GetService("Players"):GetPlayerFromCharacter(head.Parent)
-                    if plr then shared.locked = plr end
-                end
-            end
-        end)
-        return shared.silentOrig(params)
-    end
-    shared.silentInstalled = true
-    warn("[SLR] Silent Aim bereit.")
-end)
-
--- Crosshair-Suche async
-task.spawn(function()
-    task.wait(2)
-    local found = {}
-    pcall(function()
-        local pg = lp:FindFirstChildOfClass("PlayerGui")
-        if pg then
-            local n = 0
-            for _, d in ipairs(pg:GetDescendants()) do
-                n = n + 1
-                if n > 4000 then break end
-                if (d:IsA("ImageLabel") or d:IsA("Frame") or d:IsA("ImageButton")) then
-                    local ok, nm = pcall(function() return string.lower(d.Name) end)
-                    if ok and nm then
-                        for _, k in ipairs({ "crosshair", "cross", "reticle", "reticule", "cursor", "hitmarker", "scope" }) do
-                            if string.find(nm, k, 1, true) then
-                                table.insert(found, d:GetFullName())
-                                break
-                            end
-                        end
-                    end
-                end
-                if #found >= 10 then break end
-            end
-        end
-    end)
-    shared.crossN = #found
-end)
-
--- FOV-Kreis
-local fovGui, fovCircle
-pcall(function()
-    pcall(function() local old = root:FindFirstChild("SLR_FOV") if old then old:Destroy() end end)
-    fovGui = Instance.new("ScreenGui")
-    fovGui.Name = "SLR_FOV"
-    fovGui.ResetOnSpawn = false
-    fovGui.IgnoreGuiInset = true
-    fovGui.Parent = root
-    fovCircle = Instance.new("Frame")
-    fovCircle.Name = "Circle"
-    fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-    fovCircle.BackgroundTransparency = 1
-    fovCircle.BorderSizePixel = 0
-    fovCircle.Active = false
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 2
-    stroke.Color = ACC
-    stroke.Transparency = 0.1
-    stroke.Parent = fovCircle
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = fovCircle
-    fovCircle.Parent = fovGui
-end)
-local function updateFovCircleInner()
-    if not (fovGui and fovCircle) then return end
-    pcall(function()
-        local camNow = Workspace.CurrentCamera
-        if not camNow then return end
-        local vs = camNow.ViewportSize
-        fovCircle.Position = UDim2.new(0, vs.X / 2, 0, vs.Y / 2)
-        local d = math.clamp(S.aimFOV * 2, 40, 4000)
-        fovCircle.Size = UDim2.new(0, d, 0, d)
-        fovCircle.Visible = S.silent
-    end)
-end
-updateFovCircle = updateFovCircleInner
-local fovHud = nil
-pcall(function()
-    if not fovGui then return end
-    fovHud = Instance.new("Frame")
-    fovHud.Name = "LockMark"
-    fovHud.AnchorPoint = Vector2.new(0.5, 0.5)
-    fovHud.Size = UDim2.new(0, 26, 0, 26)
-    fovHud.Rotation = 45
-    fovHud.BackgroundTransparency = 1
-    fovHud.BorderSizePixel = 0
-    fovHud.Visible = false
-    local hs = Instance.new("UIStroke")
-    hs.Thickness = 2
-    hs.Color = ACC
-    hs.Parent = fovHud
-    fovHud.Parent = fovGui
-end)
-
--- Key-Capture + Hold-Erkennung
-pcall(function()
-    local function bindMatch(inp)
-        local b = S.bind
-        if not b then return false end
-        if b.kind == "mouse" then return inp.UserInputType == b.btn end
-        if b.kind == "key" then return inp.KeyCode == b.code end
-        return false
-    end
-    UIS.InputBegan:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 then S.holdL = true end
-        if inp.UserInputType == Enum.UserInputType.MouseButton2 then S.holdR = true end
-        if S.capturing then
-            if inp.KeyCode == Enum.KeyCode.Escape then
-                S.capturing = false
-                if refreshKeyBox then refreshKeyBox() end
-                return
-            end
-            if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.MouseButton2 then
-                S.bind = { kind = "mouse", btn = inp.UserInputType }
-                S.bindName = (inp.UserInputType == Enum.UserInputType.MouseButton1) and "Left Mouse" or "Right Mouse"
-            elseif inp.KeyCode ~= Enum.KeyCode.Unknown then
-                S.bind = { kind = "key", code = inp.KeyCode }
-                S.bindName = tostring(inp.KeyCode):gsub("Enum.KeyCode.", "")
-            end
-            S.immer = false
-            if refreshImmer then refreshImmer() end
-            S.bindHeld = false
-            S.capturing = false
-            if refreshKeyBox then refreshKeyBox() end
-            tapLog("Key", S.bindName)
-            return
-        end
-        if bindMatch(inp) then S.bindHeld = true end
-    end)
-    UIS.InputEnded:Connect(function(inp)
-        if inp.UserInputType == Enum.UserInputType.MouseButton1 then S.holdL = false end
-        if inp.UserInputType == Enum.UserInputType.MouseButton2 then S.holdR = false end
-        if bindMatch(inp) then S.bindHeld = false end
-    end)
-end)
-
--- 2D-Boxen
-local gui2d
-pcall(function()
-    pcall(function() local old = root:FindFirstChild("SLR_2D") if old then old:Destroy() end end)
-    gui2d = Instance.new("ScreenGui")
-    gui2d.Name = "SLR_2D"
-    gui2d.ResetOnSpawn = false
-    gui2d.IgnoreGuiInset = true
-    gui2d.Parent = root
-end)
-local box2dCache = {}
-local function box2dSet(plr)
-    local f = box2dCache[plr]
-    if f and f.Parent then return f end
-    f = gui2d and gui2d:FindFirstChild("P_" .. plr.UserId)
-    if not f then
-        f = Instance.new("Folder")
-        f.Name = "P_" .. plr.UserId
-        if gui2d then f.Parent = gui2d end
-        local function line(n)
-            local fr = Instance.new("Frame")
-            fr.Name = n
-            fr.BorderSizePixel = 0
-            fr.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            fr.Active = false
-            fr.Visible = false
-            fr.Parent = f
-            return fr
-        end
-        line("T") line("B") line("L") line("R")
-        local hpb = line("HPBG")
-        hpb.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-        hpb.BackgroundTransparency = 0.3
-        local hpf = line("HP")
-        hpf.BackgroundColor3 = Color3.fromRGB(0, 220, 100)
-    end
-    box2dCache[plr] = f
-    return f
-end
-box2dHide = function(plr)
-    local f = box2dCache[plr]
-    if f then for _, c in ipairs(f:GetChildren()) do c.Visible = false end end
-end
--- TRACERS (Linien Unterkante -> Spieler, native Frames, INIQUINT-Muster)
-local tracerCache = {}
-local function tracerHide(plr)
-    local fr = tracerCache[plr]
-    if fr then fr.Visible = false end
-end
-local function tracerTick()
-    if not gui2d then return end
-    local camNow = Workspace.CurrentCamera
-    if not camNow then return end
-    local vs = camNow.ViewportSize
-    local fromX, fromY = vs.X / 2, vs.Y
-    local me = myHRP()
-    local myPos = me and me.Position or nil
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p == lp then
-            tracerHide(p)
-        else
-            pcall(function()
-                local ch = p.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
-                if not (S.tracer and hum and hrp and hum.Health > 0) then tracerHide(p) return end
-                if myPos and (myPos - hrp.Position).Magnitude > S.espMaxDist then tracerHide(p) return end
-                local v, on = camNow:WorldToViewportPoint(hrp.Position)
-                if not on then tracerHide(p) return end
-                local fr = tracerCache[p]
-                if not (fr and fr.Parent) then
-                    fr = Instance.new("Frame")
-                    fr.AnchorPoint = Vector2.new(0, 0.5)
-                    fr.BorderSizePixel = 0
-                    fr.Active = false
-                    fr.Visible = false
-                    fr.Parent = gui2d
-                    tracerCache[p] = fr
-                end
-                local dx, dy = v.X - fromX, v.Y - fromY
-                local len = math.sqrt(dx * dx + dy * dy)
-                if len < 4 then tracerHide(p) return end
-                local gun = playerGun(p)
-                local col = (shared.locked == p) and Color3.fromRGB(255, 255, 255)
-                    or (gun ~= nil and Color3.fromRGB(255, 150, 40) or S.espColor)
-                fr.Position = UDim2.new(0, fromX, 0, fromY)
-                fr.Size = UDim2.new(0, len, 0, 2)
-                fr.Rotation = math.deg(math.atan2(dy, dx))
-                fr.BackgroundColor3 = col
-                fr.Visible = true
-            end)
-        end
-    end
-    for plr, fr in pairs(tracerCache) do
-        if not fr.Parent or not plr.Parent then tracerCache[plr] = nil pcall(function() fr:Destroy() end) end
-    end
-end
-local function box2dTick()
-    if not gui2d then return end
-    local camNow = Workspace.CurrentCamera
-    if not camNow then return end
-    local me = myHRP()
-    local myPos = me and me.Position or nil
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p == lp then
-            box2dHide(p)
-        else
-            local ok = pcall(function()
-                local ch = p.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
-                if not (S.box2d and hum and hrp and hum.Health > 0) then box2dHide(p) return end
-                if myPos and (myPos - hrp.Position).Magnitude > S.espMaxDist then box2dHide(p) return end
-                local cf, sz = ch:GetBoundingBox()
-                local minX, minY, maxX, maxY, any = 1e9, 1e9, -1e9, -1e9, false
-                for xi = -1, 1, 2 do for yi = -1, 1, 2 do for zi = -1, 1, 2 do
-                    local wp = (cf * CFrame.new(xi * sz.X / 2, yi * sz.Y / 2, zi * sz.Z / 2)).Position
-                    local v, on = camNow:WorldToViewportPoint(wp)
-                    if on then
-                        any = true
-                        if v.X < minX then minX = v.X end
-                        if v.Y < minY then minY = v.Y end
-                        if v.X > maxX then maxX = v.X end
-                        if v.Y > maxY then maxY = v.Y end
-                    end
-                end end end
-                if not any or (maxX - minX) < 4 or (maxY - minY) < 4 then box2dHide(p) return end
-                local f = box2dSet(p)
-                local gun = playerGun(p)
-                local armed = gun ~= nil
-                local blk = shared.blocked and shared.blocked[p]
-                local col = (shared.locked == p) and Color3.fromRGB(255, 255, 255)
-                    or (blk and WALL_RED)
-                    or (armed and Color3.fromRGB(255, 150, 40) or S.boxColor)
-                local t = 2
-                local w, h = maxX - minX, maxY - minY
-                local function put(n, x, y, sx, sy, c)
-                    local fr = f:FindFirstChild(n)
-                    if fr then
-                        fr.Position = UDim2.new(0, x, 0, y)
-                        fr.Size = UDim2.new(0, sx, 0, sy)
-                        fr.BackgroundColor3 = c or col
-                        fr.Visible = true
-                    end
-                end
-                put("T", minX, minY, w, t)
-                put("B", minX, maxY - t, w, t)
-                put("L", minX, minY, t, h)
-                put("R", maxX - t, minY, t, h)
-                local frac = math.clamp(hum.Health / (hum.MaxHealth > 0 and hum.MaxHealth or 100), 0, 1)
-                local hpc = frac > 0.5 and Color3.fromRGB(0, 220, 100)
-                    or (frac > 0.25 and Color3.fromRGB(255, 170, 0) or Color3.fromRGB(255, 50, 50))
-                put("HPBG", minX - 7, minY, 4, h, Color3.fromRGB(20, 20, 20))
-                local fh = h * frac
-                put("HP", minX - 7, maxY - fh, 4, fh, hpc)
-            end)
-            if not ok then box2dHide(p) end
-        end
-    end
-    for plr, f in pairs(box2dCache) do
-        if not f.Parent or not plr.Parent then box2dCache[plr] = nil pcall(function() f:Destroy() end) end
-    end
-end
--- SILENT-CACHE (pro Frame: Lock sofort frisch + Raute folgt ohne 0.5s-Lag)
-local function silentCacheTick()
-    if S.silent and shared.silentTarget then
-        local ok, head = pcall(shared.silentTarget)
-        if ok and head then
-            shared.silentCache = head
-            shared.silentCacheT = os.clock()
-        else
-            shared.silentCache = nil
-        end
-    else
-        shared.silentCache = nil
-    end
-    if fovHud then
-        pcall(function()
-            local mk = shared.silentCache
-            local valid = false
-            if S.silent and mk then
-                pcall(function()
-                    local ch = mk.Parent
-                    local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                    valid = hum and hum.Health > 0 and mk.Parent ~= nil
-                end)
-            end
-            if valid then
-                local camNow = Workspace.CurrentCamera
-                local hv, hon = camNow:WorldToViewportPoint(mk.Position)
-                if hon then
-                    fovHud.Position = UDim2.new(0, hv.X, 0, hv.Y)
-                    fovHud.Visible = true
-                    return
-                end
-            end
-            fovHud.Visible = false
-        end)
-    end
-end
-RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
-    if not alive() then
-        pcall(function() RunService:UnbindFromRenderStep("SLR_2D") end)
-        return
-    end
-    pcall(box2dTick)
-    pcall(tracerTick)
-    pcall(silentCacheTick)
-end)
-
--- ESP-Loop (Tags + 3D-Box, 0.5s)
-clearTags = function()
-    for _, p in ipairs(Players:GetPlayers()) do
-        pcall(function()
-            local ch = p.Character
-            local h = ch and ch:FindFirstChild("Head")
-            local b = h and h:FindFirstChild("SLR_Tag")
-            if b then b:Destroy() end
-        end)
-    end
-end
-clearBoxes = function()
-    for _, p in ipairs(Players:GetPlayers()) do
-        pcall(function()
-            local ch = p.Character
-            local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
-            local bx = hrp and hrp:FindFirstChild("SLR_Box")
-            if bx then bx:Destroy() end
-        end)
-    end
-    for _, plr in ipairs(Players:GetPlayers()) do box2dHide(plr) end
-    for plr, fr in pairs(tracerCache) do pcall(function() fr:Destroy() end) tracerCache[plr] = nil end
-end
-clearESP = function()
-    clearTags()
-    clearBoxes()
-end
-local function updateBox(p, hrp, armed, blocked)
-    local bx = hrp:FindFirstChild("SLR_Box")
-    if not S.box then if bx then bx:Destroy() end return end
-    if not bx then
-        bx = Instance.new("BoxHandleAdornment")
-        bx.Name = "SLR_Box"
-        bx.Adornee = hrp
-        bx.Size = Vector3.new(3.5, 6, 2.5)
-        bx.CFrame = CFrame.new(0, 0.5, 0)
-        bx.AlwaysOnTop = true
-        bx.ZIndex = 5
-        bx.Transparency = 0.55
-        bx.Parent = hrp
-    end
-    if shared.locked == p then
-        bx.Color3 = Color3.fromRGB(255, 255, 255)
-        bx.Transparency = 0.35
-    elseif blocked then
-        bx.Color3 = WALL_RED
-        bx.Transparency = 0.45
-    elseif armed then
-        bx.Color3 = Color3.fromRGB(255, 150, 40)
-        bx.Transparency = 0.55
-    else
-        bx.Color3 = S.boxColor
-        bx.Transparency = 0.55
-    end
-end
-
-local tickN = 0
-task.spawn(function()
-    warn("[SLR] boot v3 loops gestartet")
-    while alive() do
-        local ok = pcall(function()
-            tickN = tickN + 1
-            local total = #Players:GetPlayers() - 1
-            if total < 0 then total = 0 end
-            local tapInfo = ""
-            if os.clock() - S.tapT < 5 then tapInfo = " [TAP " .. tostring(S.tapMsg) .. "]" end
-            if tickN % 4 == 0 then
-                warn("[SLR] loop ok #" .. tickN .. " esp=" .. tostring(S.esp) .. " silent=" .. tostring(S.silent) .. " SH=" .. tostring(shared.silentCalls or 0))
-            end
-            local espOff = not S.esp
-            if espOff then clearTags() end
-            local me = myHRP()
-            local myPos = me and me.Position or nil
-            if shared.locked then
-                pcall(function()
-                    local ch = shared.locked.Character
-                    local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                    local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
-                    if not (hum and hrp and hum.Health > 0) then
-                        shared.locked = nil
-                    elseif myPos and (myPos - hrp.Position).Magnitude > S.espMaxDist then
-                        shared.locked = nil
-                    end
-                end)
-            end
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= lp and p.Character then
-                    local ch = p.Character
-                    local hum = ch:FindFirstChildOfClass("Humanoid")
-                    local head = ch:FindFirstChild("Head")
-                    local hrp = ch:FindFirstChild("HumanoidRootPart")
-                    if hum and head and hrp and hum.Health > 0 then
-                        local dist = myPos and (myPos - hrp.Position).Magnitude or 0
-                        if dist <= S.espMaxDist then
-                            local gun = playerGun(p)
-                            local armed = gun ~= nil
-                            local tool = gun or playerUnknownTool(p)
-                            local blocked = occluded(hrp.Position, ch)
-                            shared.blocked[p] = blocked
-                            if S.esp then
-                            local b = head:FindFirstChild("SLR_Tag")
-                            if not b then
-                                b = Instance.new("BillboardGui")
-                                b.Name = "SLR_Tag"
-                                b.Size = UDim2.new(0, 95, 0, 26)
-                                b.StudsOffset = Vector3.new(0, 2.1, 0)
-                                b.AlwaysOnTop = true
-                                local bg = Instance.new("Frame")
-                                bg.Name = "BG"
-                                bg.Size = UDim2.new(1, 0, 1, 0)
-                                bg.BackgroundTransparency = 1
-                                bg.BorderSizePixel = 0
-                                bg.Parent = b
-                                local name = Instance.new("TextLabel")
-                                name.Name = "Name"
-                                name.Size = UDim2.new(1, 0, 0.58, 0)
-                                name.BackgroundTransparency = 1
-                                name.TextScaled = true
-                                name.TextStrokeTransparency = 0
-                                name.TextXAlignment = Enum.TextXAlignment.Center
-                                name.TextTruncate = Enum.TextTruncate.AtEnd
-                                name.Parent = bg
-                                local info = Instance.new("TextLabel")
-                                info.Name = "Sub"
-                                info.Size = UDim2.new(1, 0, 0.42, 0)
-                                info.Position = UDim2.new(0, 0, 0.58, 0)
-                                info.BackgroundTransparency = 1
-                                info.TextScaled = true
-                                info.TextStrokeTransparency = 0
-                                info.TextXAlignment = Enum.TextXAlignment.Center
-                                info.TextTruncate = Enum.TextTruncate.AtEnd
-                                info.Parent = bg
-                                b.Parent = head
-                            end
-                            local bg = b:FindFirstChild("BG")
-                            if bg then
-                                local w = math.clamp(110 - dist * 0.07, 55, 95)
-                                b.Size = UDim2.new(0, math.floor(w), 0, math.floor(w * 0.28))
-                                local nl = bg:FindFirstChild("Name")
-                                local sl = bg:FindFirstChild("Sub")
-                                if nl then
-                                    nl.Text = p.DisplayName
-                                    if shared.locked == p then
-                                        nl.TextColor3 = armed and Color3.fromRGB(255, 180, 60) or S.nameColor
-                                    elseif blocked then
-                                        nl.TextColor3 = WALL_RED
-                                    else
-                                        nl.TextColor3 = armed and Color3.fromRGB(255, 180, 60) or S.nameColor
-                                    end
-                                end
-                                if sl then
-                                    local t = math.floor(dist) .. "m"
-                                    if tool and not armed and not isCivilian(tool) then
-                                        t = t .. " * ?" .. tool
-                                    elseif tool and armed then
-                                        t = t .. " * " .. tool
-                                    end
-                                    sl.Text = t
-                                    if blocked and shared.locked ~= p then
-                                        sl.TextColor3 = WALL_RED
-                                    elseif armed then
-                                        sl.TextColor3 = Color3.fromRGB(255, 170, 40)
-                                    elseif tool and not isCivilian(tool) then
-                                        sl.TextColor3 = Color3.fromRGB(255, 220, 130)
-                                    else
-                                        sl.TextColor3 = S.espColor
-                                    end
-                                end
-                                if shared.locked == p then
-                                    if nl then nl.Text = "> " .. p.DisplayName end
-                                end
-                            end
-                            else
-                                local old2 = head:FindFirstChild("SLR_Tag")
-                                if old2 then old2:Destroy() end
-                            end
-                            updateBox(p, hrp, armed, blocked)
-                        else
-                            shared.blocked[p] = nil
-                            local old = head:FindFirstChild("SLR_Tag")
-                            if old then old:Destroy() end
-                            local obx = hrp:FindFirstChild("SLR_Box")
-                            if obx then obx:Destroy() end
-                        end
-                    else
-                        shared.blocked[p] = nil
-                        pcall(function()
-                            local hrp2 = ch:FindFirstChild("HumanoidRootPart")
-                            local bx2 = hrp2 and hrp2:FindFirstChild("SLR_Box")
-                            if bx2 then bx2:Destroy() end
-                        end)
-                    end
-                end
-            end
-            local holdActive = shared.silentHold and shared.silentHold() or false
-            local holdTxt = holdActive and "HOLD" or (S.immer and "always" or "--")
-            local silentTxt = "Silent:OFF"
-            if S.silent then
-                silentTxt = "Silent:ON+" .. holdTxt
-                if shared.locked then
-                    pcall(function() silentTxt = silentTxt .. " Target:" .. tostring(shared.locked.DisplayName or shared.locked.Name) end)
-                end
-            end
-            status.Text = "Lobby:" .. total .. " SH:" .. tostring(shared.silentCalls or 0) .. " CH:" .. tostring(shared.crossN or 0) .. (S.farm and (" FM:" .. tostring(S.farmed or 0)) or "") .. (S.ghostFarm and (fireproximityprompt and " FP:ok" or " FP:NIL!") or "") .. "\n" .. silentTxt .. tapInfo
-            if statusDot then
-                statusDot.BackgroundColor3 = S.silent and ACC or (S.esp and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(90, 95, 115))
-            end
-            -- Raute läuft jetzt pro Frame (silentCacheTick), hier nichts mehr
-        end)
-        if not ok then task.wait(0.5) end
-        task.wait(0.5)
-    end
-    clearESP()
-end)
-
--- PLAYER-Loop (Anti Knock + Zoom + Spectate)
-task.spawn(function()
-    while alive() do
-        pcall(function()
-            local ch = lp.Character
-            local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-            if hum then
-                if S.player.antiknock or S.ghostFarm then
-                    hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
-                    hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
-                    hum:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
-                    local st = hum:GetState()
-                    if st == Enum.HumanoidStateType.Ragdoll or st == Enum.HumanoidStateType.Physics or st == Enum.HumanoidStateType.FallenDown then
-                        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-                    end
-                end
-                if S.player.zoom then
-                    local cam = Workspace.CurrentCamera
-                    if cam then
-                        if not S.zoomOrig then S.zoomOrig = cam.MaxZoomDistance end
-                        if cam.MaxZoomDistance ~= 1000 then cam.MaxZoomDistance = 1000 end
-                    end
-                end
-                if S.player.spec and specTick then specTick() end
-            end
-        end)
-        task.wait(0.5)
-    end
-end)
-
--- ROB-ESP (Raub-Prompts: Safe/Vault/Register, passiv, 0.5s)
-local robCache = {}
-local ROB_KEYS = { "rob", "safe", "vault", "register", "cash", "loot", "steal", "hack", "crack", "drill" }
-local function robText(prompt)
-    local a, o = "", ""
-    pcall(function() a = tostring(prompt.ActionText or "") end)
-    pcall(function() o = tostring(prompt.ObjectText or "") end)
-    if a ~= "" then return a end
-    return o
-end
-local function robScan()
-    local found = {}
-    pcall(function()
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("ProximityPrompt") then
-                local t = string.lower(robText(d))
-                if t ~= "" then
-                    for _, k in ipairs(ROB_KEYS) do
-                        if string.find(t, k, 1, true) then
-                            table.insert(found, d)
-                            break
-                        end
-                    end
-                end
-            end
-            if #found >= 60 then break end
-        end
-    end)
-    return found
-end
-local function robTag(prompt, dist)
-    local host = prompt.Parent
-    if host and not host:IsA("BasePart") then
-        host = prompt:FindFirstAncestorOfClass("BasePart")
-    end
-    if not (host and host:IsA("BasePart")) then return end
-    local b = host:FindFirstChild("SLR_Rob")
-    if b and b.Size.X.Offset ~= 84 then b:Destroy() b = nil end
-    if not b then
-        b = Instance.new("BillboardGui")
-        b.Name = "SLR_Rob"
-        b.Size = UDim2.new(0, 84, 0, 18)
-        b.StudsOffset = Vector3.new(0, 1.6, 0)
-        b.AlwaysOnTop = true
-        local t = Instance.new("TextLabel")
-        t.Name = "T"
-        t.Size = UDim2.new(1, 0, 1, 0)
-        t.BackgroundTransparency = 1
-        t.TextScaled = true
-        t.TextStrokeTransparency = 0
-        t.TextXAlignment = Enum.TextXAlignment.Center
-        t.TextColor3 = Color3.fromRGB(255, 210, 80)
-        t.Parent = b
-        b.Parent = host
-    end
-    local t = b:FindFirstChild("T")
-    if t then t.Text = robText(prompt) .. " " .. math.floor(dist) .. "m" end
-end
-local function clearRob()
-    for prompt, _ in pairs(robCache) do
-        pcall(function()
-            local host = prompt.Parent
-            if host and not host:IsA("BasePart") then
-                host = prompt:FindFirstAncestorOfClass("BasePart")
-            end
-            local b = host and host:FindFirstChild("SLR_Rob")
-            if b then b:Destroy() end
-        end)
-    end
-    robCache = {}
-end
-local robTickN = 0
-task.spawn(function()
-    while alive() do
-        pcall(function()
-            robTickN = robTickN + 1
-            if not S.robEsp then
-                if next(robCache) ~= nil then clearRob() end
-            else
-                if robTickN % 30 == 1 or next(robCache) == nil then
-                    robCache = {}
-                    for _, pr in ipairs(robScan()) do robCache[pr] = true end
-                end
-                local me = myHRP()
-                local myPos = me and me.Position or nil
-                for pr, _ in pairs(robCache) do
-                    local ok, alive2 = pcall(function() return pr.Parent ~= nil end)
-                    if not ok or not alive2 then
-                        robCache[pr] = nil
-                    else
-                        local pos = pr.Parent:IsA("BasePart") and pr.Parent.Position or nil
-                        if not pos then
-                            local anc = pr:FindFirstAncestorOfClass("BasePart")
-                            pos = anc and anc.Position or nil
-                        end
-                        if pos and myPos and (myPos - pos).Magnitude <= 2000 then
-                            robTag(pr, (myPos - pos).Magnitude)
-                        end
-                    end
-                end
-            end
-        end)
-        task.wait(0.5)
-    end
-    clearRob()
-end)
-
--- SPECTATE (naechster lebender Spieler, passiv)
-specTick = function()
-    local cam = Workspace.CurrentCamera
-    if not cam then return end
-    local valid = false
-    pcall(function()
-        local tgt = shared.specTarget
-        local ch = tgt and tgt.Character
-        local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-        if hum and hum.Health > 0 then
-            cam.CameraSubject = hum
-            valid = true
-        end
-    end)
-    if valid then return end
-    shared.specTarget = nil
-    local me = myHRP()
-    local myPos = me and me.Position or nil
-    local best, bd = nil, 1e9
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= lp then
-            pcall(function()
-                local ch = p.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
-                if hum and hum.Health > 0 and hrp then
-                    local d = myPos and (myPos - hrp.Position).Magnitude or 0
-                    if d < bd then best, bd = p, d end
-                end
-            end)
-        end
-    end
-    shared.specTarget = best
-end
-
--- INSTANT INTERACT (alle Prompt-Haltezeiten -> 0, AUS stellt her)
-local promptOrig = {}
-restorePrompts = function()
-    for pr, h in pairs(promptOrig) do
-        pcall(function()
-            if pr.Parent ~= nil then pr.HoldDuration = h end
-        end)
-    end
-    promptOrig = {}
-end
-task.spawn(function()
-    while alive() do
-        pcall(function()
-            if S.instant then
-                for _, d in ipairs(Workspace:GetDescendants()) do
-                    if d:IsA("ProximityPrompt") and d.HoldDuration > 0 then
-                        if promptOrig[d] == nil then promptOrig[d] = d.HoldDuration end
-                        pcall(function() d.HoldDuration = 0 end)
-                    end
-                end
-            end
-        end)
-        task.wait(2)
-    end
-end)
-
--- FARM-ESP (Trash/Glass/Sell/Claim-Tags + Drucker, passiv, 0.5s)
-local farmCache = {}
-local printerCache = {}
-local FARMESP = {
-    { k = { "search trash", "müll", "durchsuch" }, c = Color3.fromRGB(0, 220, 255), s = "Trash" },
-    { k = { "break glass", "glas", "scheibe", "einschlagen", "fenster" }, c = Color3.fromRGB(255, 150, 40), s = "Glass" },
-    { k = { "sell loot", "loot buyer", "verkauf", "beute" }, c = Color3.fromRGB(255, 210, 80), s = "Sell" },
-    { k = { "claim reward", "belohnung", "abhol" }, c = Color3.fromRGB(180, 110, 255), s = "Claim" },
-}
-local function farmTextOf(prompt)
-    local a, o = "", ""
-    pcall(function() a = tostring(prompt.ActionText or "") end)
-    pcall(function() o = tostring(prompt.ObjectText or "") end)
-    return string.lower(a .. " " .. o)
-end
-local function farmTag(host, txt, col)
-    if not (host and host:IsA("BasePart")) then return end
-    local b = host:FindFirstChild("SLR_Farm")
-    if not b then
-        b = Instance.new("BillboardGui")
-        b.Name = "SLR_Farm"
-        b.Size = UDim2.new(0, 84, 0, 18)
-        b.StudsOffset = Vector3.new(0, 1.6, 0)
-        b.AlwaysOnTop = true
-        local t = Instance.new("TextLabel")
-        t.Name = "T"
-        t.Size = UDim2.new(1, 0, 1, 0)
-        t.BackgroundTransparency = 1
-        t.TextScaled = true
-        t.TextStrokeTransparency = 0
-        t.TextXAlignment = Enum.TextXAlignment.Center
-        t.TextColor3 = col
-        t.Parent = b
-        b.Parent = host
-    end
-    local t = b:FindFirstChild("T")
-    if t then
-        t.Text = txt
-        t.TextColor3 = col
-    end
-end
-local function farmHost(prompt)
-    local host = prompt.Parent
-    if host and not host:IsA("BasePart") then
-        host = prompt:FindFirstAncestorOfClass("BasePart")
-    end
-    if host and host:IsA("BasePart") then return host end
-    return nil
-end
-local function farmScan()
-    local found = {}
-    pcall(function()
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("ProximityPrompt") then
-                local t = farmTextOf(d)
-                for _, def in ipairs(FARMESP) do
-                    local hit = false
-                    for _, k in ipairs(def.k) do
-                        if string.find(t, k, 1, true) then hit = true break end
-                    end
-                    if hit then
-                        table.insert(found, { pr = d, def = def })
-                        break
-                    end
-                end
-            end
-            if #found >= 60 then break end
-        end
-    end)
-    return found
-end
-clearFarm = function()
-    for pr, _ in pairs(farmCache) do
-        pcall(function()
-            local host = farmHost(pr)
-            local b = host and host:FindFirstChild("SLR_Farm")
-            if b then b:Destroy() end
-        end)
-    end
-    farmCache = {}
-    pcall(function()
-        for _, m in ipairs(printerCache) do
-            pcall(function()
-                for _, d in ipairs(m:GetDescendants()) do
-                    if d:IsA("BasePart") then
-                        local b = d:FindFirstChild("SLR_Farm")
-                        if b then b:Destroy() end
-                    end
-                end
-            end)
-        end
-    end)
-    printerCache = {}
-end
-local farmTickN = 0
-task.spawn(function()
-    while alive() do
-        pcall(function()
-            farmTickN = farmTickN + 1
-            if not S.farmEsp then
-                if next(farmCache) ~= nil or #printerCache > 0 then clearFarm() end
-            else
-                if farmTickN % 30 == 1 or next(farmCache) == nil then
-                    farmCache = {}
-                    for _, e in ipairs(farmScan()) do farmCache[e.pr] = e.def end
-                    printerCache = {}
-                    pcall(function()
-                        local pr = Workspace:FindFirstChild("Printers")
-                        if pr then
-                            for _, m in ipairs(pr:GetChildren()) do
-                                table.insert(printerCache, m)
-                            end
-                        end
-                    end)
-                end
-                local me = myHRP()
-                local myPos = me and me.Position or nil
-                for pr, def in pairs(farmCache) do
-                    local ok, a2 = pcall(function() return pr.Parent ~= nil end)
-                    if not ok or not a2 then
-                        farmCache[pr] = nil
-                    else
-                        local host = farmHost(pr)
-                        local pos = host and host.Position or nil
-                        if pos and myPos and (myPos - pos).Magnitude <= 2000 then
-                            farmTag(host, def.s .. " " .. math.floor((myPos - pos).Magnitude) .. "m", def.c)
-                        end
-                    end
-                end
-                if myPos then
-                    for _, m in ipairs(printerCache) do
-                        pcall(function()
-                            local part = m:IsA("BasePart") and m or m:FindFirstChildWhichIsA("BasePart", true)
-                            if part then
-                                farmTag(part, "Printer " .. math.floor((myPos - part.Position).Magnitude) .. "m", Color3.fromRGB(190, 110, 255))
-                            end
-                        end)
-                    end
-                end
-            end
-        end)
-        task.wait(0.5)
-    end
-    clearFarm()
-end)
-
--- AUTO-FARM (stationaer: feuert Farm-Prompts nur in Reichweite, kein TP, kein Laufen)
-local farmFireCache = {}
-local farmFireTickN = 0
-local FARMFIRE_KEYS = { "search trash", "müll", "durchsuch", "sell loot", "loot buyer", "verkauf", "beute", "claim reward", "belohnung", "abhol", "collect", "sammel", "claim", "printer", "take", "nehm", "nimm", "break glass", "window", "fenster", "smash", "steal", "glass", "glas", "scheibe" }
-local function farmFireScan()
-    local found = {}
-    pcall(function()
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("ProximityPrompt") then
-                local t = farmTextOf(d)
-                if t ~= " " and t ~= "" then
-                    local isBreak = string.find(t, "break glass", 1, true) ~= nil
-                    if (d.HoldDuration or 0) <= 1.5 or isBreak then
-                        local bad = string.find(t, "buy", 1, true) or string.find(t, "shop", 1, true) or string.find(t, "purchase", 1, true) or string.find(t, "price", 1, true) or string.find(t, "ink", 1, true) or string.find(t, "moneygun", 1, true) or string.find(t, "plant c4", 1, true)
-                            or string.find(t, "sit", 1, true) or string.find(t, "drive", 1, true) or string.find(t, "fahren", 1, true) or string.find(t, "trunk", 1, true) or string.find(t, "kofferraum", 1, true) or string.find(t, "grab object", 1, true) or string.find(t, "place object", 1, true) or string.find(t, "car dealer", 1, true) or string.find(t, "händler", 1, true)
-                            or string.find(t, "kauf", 1, true) or string.find(t, "preis", 1, true)
-                        if not bad then
-                            for _, k in ipairs(FARMFIRE_KEYS) do
-                                if string.find(t, k, 1, true) then
-                                    table.insert(found, d)
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-            if #found >= 40 then break end
-        end
-    end)
-    return found
-end
-task.spawn(function()
-    while alive() do
-        pcall(function()
-            farmFireTickN = farmFireTickN + 1
-            if S.farm and fireproximityprompt then
-                if farmFireTickN % 6 == 1 or next(farmFireCache) == nil then
-                    farmFireCache = {}
-                    for _, pr in ipairs(farmFireScan()) do farmFireCache[pr] = true end
-                end
-                local me = myHRP()
-                local myPos = me and me.Position or nil
-                if myPos then
-                    for pr, _ in pairs(farmFireCache) do
-                        local ok, a2 = pcall(function() return pr.Parent ~= nil end)
-                        if not ok or not a2 then
-                            farmFireCache[pr] = nil
-                        else
-                            local host = farmHost(pr)
-                            local pos = host and host.Position or nil
-                            local maxD = 14
-                            pcall(function() maxD = (pr.MaxActivationDistance or 12) + 3 end)
-                            if pos and (myPos - pos).Magnitude <= maxD then
-                                pcall(function()
-                                    fireproximityprompt(pr)
-                                    S.farmed = (S.farmed or 0) + 1
-                                end)
-                            end
-                        end
-                    end
-                end
-            else
-                if next(farmFireCache) ~= nil then farmFireCache = {} end
-            end
-        end)
-        task.wait(1)
-    end
-end)
-
--- CAR-FARM (walk, AFK): laeuft zum naechsten Break-Glass-Spot, feuert, naechster. Kein TP/Tween/Speed.
-local function breakSpotsScan()
-    local found = {}
-    pcall(function()
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("ProximityPrompt") then
-                local t = farmTextOf(d)
-                if string.find(t, "break", 1, true) or string.find(t, "glas", 1, true) or string.find(t, "scheibe", 1, true) then
-                    table.insert(found, d)
-                end
-            end
-            if #found >= 25 then break end
-        end
-    end)
-    return found
-end
-task.spawn(function()
-    local spots = {}
-    local tick = 0
-    while alive() do
-        pcall(function()
-            if S.carFarm then
-                local hrp = myHRP()
-                local ch = lp.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                if hrp and hum and hum.Health > 0 then
-                    tick = tick + 1
-                    if tick % 4 == 1 or #spots == 0 then spots = breakSpotsScan() end
-                    local pr, bestD = nil, 1e9
-                    local myP = hrp.Position
-                    for _, cand in ipairs(spots) do
-                        pcall(function()
-                            if cand.Parent ~= nil then
-                                local host = farmHost(cand)
-                                local cp = host and host.Position or nil
-                                if cp then
-                                    local d = (myP - cp).Magnitude
-                                    if d < bestD then pr, bestD = cand, d end
-                                end
-                            end
-                        end)
-                    end
-                    if pr then
-                        local arrived = false
-                        pcall(function()
-                            local host = farmHost(pr)
-                            local pos = host and host.Position or nil
-                            if pos then
-                                if hum.Sit then hum.Sit = false end
-                                local target = pos + Vector3.new(0, 0, 6)
-                                if (hrp.Position - target).Magnitude < 9 then
-                                    arrived = true
-                                else
-                                    hum:MoveTo(target)
-                                    local waited, lastP, stuck = 0, hrp.Position, 0
-                                    local need = math.clamp(((hrp.Position - target).Magnitude) / 14, 3, 40)
-                                    while waited < need do
-                                        if not S.carFarm then
-                                            pcall(function() hum:MoveTo(hrp.Position) end)
-                                            break
-                                        end
-                                        task.wait(0.5)
-                                        waited = waited + 0.5
-                                        local nowP = hrp.Position
-                                        if (nowP - lastP).Magnitude < 1.5 then
-                                            stuck = stuck + 1
-                                            pcall(function() hum.Jump = true end)
-                                            hum:MoveTo(target)
-                                        else
-                                            stuck = 0
-                                        end
-                                        lastP = nowP
-                                        if (nowP - target).Magnitude < 9 then arrived = true break end
-                                        if stuck >= 6 then break end
-                                        if hum.Sit then hum.Sit = false end
-                                    end
-                                    pcall(function() hum:MoveTo(hrp.Position) end)
-                                end
-                            end
-                        end)
-                        if arrived then
-                            task.wait(0.8)
-                            for i = 1, 4 do
-                                if not S.carFarm then break end
-                                pcall(function()
-                                    if fireproximityprompt then
-                                        local ok2 = pcall(function() return pr.Parent ~= nil end)
-                                        if ok2 then
-                                            fireproximityprompt(pr)
-                                            S.farmed = (S.farmed or 0) + 1
-                                        end
-                                    end
-                                end)
-                                task.wait(0.45)
-                            end
-                            task.wait(0.4)
-                        else
-                            task.wait(0.4)
-                        end
-                    else
-                        task.wait(1)
-                    end
-                else
-                    task.wait(1)
-                end
-            else
-                task.wait(1)
-            end
-        end)
-        task.wait(0.2)
-    end
-end)
-
--- GHOST-CAR-FARM (hin-TP im Sitz -> AUSSTEIGEN (normal stehen) -> Faust+Prompt -> wieder einsteigen)
-local ghostOrig = {}
-local ghostVeh = nil
--- NUR Transparency (lokal, repliziert nie). CanCollide/Anchored fassen wir NICHT
--- an (repliziert -> "No clip Erkennung"). Collision hält Roller am Boden.
-restoreGhost = function()
-    for part, tr in pairs(ghostOrig) do
-        pcall(function()
-            if part.Parent ~= nil then part.Transparency = tr end
-        end)
-    end
-    ghostOrig = {}
-    ghostVeh = nil
-end
-local function ghostIt(m)
-    if ghostVeh ~= m then restoreGhost() end
-    ghostVeh = m
-    pcall(function()
-        for _, d in ipairs(m:GetDescendants()) do
-            if d:IsA("BasePart") and d.Transparency < 1 then
-                if ghostOrig[d] == nil then ghostOrig[d] = d.Transparency end
-                pcall(function() d.Transparency = 1 end)
-            end
-        end
-    end)
-end
--- Drive-Suche: erst EIGENES Fahrzeug (Name), dann irgendeins (DE+EN: drive/fahren)
-local function isDriveText(t)
-    return (string.find(t, "drive", 1, true) or string.find(t, "fahren", 1, true)) ~= nil
-end
-local function findDrive(myP, maxD)
-    local best, bestD = nil, maxD or 20
-    local own, ownD = nil, maxD or 20
-    for _, d in ipairs(Workspace:GetDescendants()) do
-        if d:IsA("ProximityPrompt") then
-            if isDriveText(farmTextOf(d)) then
-                local host = farmHost(d)
-                local pos = host and host.Position or nil
-                if pos then
-                    local dd = (myP - pos).Magnitude
-                    if dd < bestD then best, bestD = d, dd end
-                    local m = d:FindFirstAncestorOfClass("Model")
-                    if m and string.find(m.Name, lp.Name, 1, true) and dd < ownD then
-                        own, ownD = d, dd
-                    end
-                end
-            end
-        end
-    end
-    return own or best
-end
-local function equipFist()
-    local ch = lp.Character
-    if not ch then return nil end
-    local hum = ch:FindFirstChildOfClass("Humanoid")
-    local fist = ch:FindFirstChild("Fist")
-    if not fist then
-        local bp = lp:FindFirstChildOfClass("Backpack")
-        fist = bp and bp:FindFirstChild("Fist")
-        if fist and hum then pcall(function() hum:EquipTool(fist) end) end
-    end
-    return fist
-end
--- Landeplatz: neben Rob-Auto auf Boden, mit Freiraum-Check (nicht IN Wand/Auto)
-local function ghostLanding(pos, ignore)
-    local best, bestScore = nil, 1e9
-    for _, off in ipairs({ Vector3.new(5, 1, 0), Vector3.new(-5, 1, 0), Vector3.new(0, 1, 5), Vector3.new(0, 1, -5) }) do
-        local cand = pos + off
-        local ok, hit = pcall(function()
-            local params = RaycastParams.new()
-            params.FilterType = Enum.RaycastFilterType.Exclude
-            params.FilterDescendantsInstances = ignore or {}
-            params.IgnoreWater = true
-            return Workspace:Raycast(cand + Vector3.new(0, 2, 0), Vector3.new(0, -10, 0), params)
-        end)
-        if ok and hit and hit.Position then
-            local drop = cand.Y - hit.Position.Y
-            if drop >= 0 and drop <= 6 then
-                local free = false
-                pcall(function()
-                    local op = OverlapParams.new()
-                    op.FilterType = Enum.RaycastFilterType.Exclude
-                    op.FilterDescendantsInstances = ignore or {}
-                    op.MaxParts = 5
-                    free = #Workspace:GetPartBoundsInBox(CFrame.new(cand), Vector3.new(4, 4, 4), op) == 0
-                end)
-                if free then
-                    local score = drop + (cand - pos).Magnitude * 0.1
-                    if score < bestScore then best, bestScore = cand, score end
-                end
-            end
-        end
-    end
-    return best or (pos + Vector3.new(0, 2, 4))
-end
--- FAHREN (AFK, legitim): Sitz-Throttle/Steer zum Ziel, mit Richtungs-AutoFix + Rückwärts bei Stau
-local driveSign = 1
-local function driveTo(seat, pos)
-    local arrived = false
-    local t0 = os.clock()
-    local lastP, lastT, stuckT = nil, os.clock(), 0
-    local lastD = nil
-    pcall(function()
-        local hrp0 = myHRP()
-        lastP = hrp0 and hrp0.Position or nil
-    end)
-    while S.ghostFarm and (os.clock() - t0) < 60 do
-        local stop = false
-        pcall(function()
-            local ch = lp.Character
-            local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-            if not (hum and hum.SeatPart == seat and hum.Health > 0) then stop = true return end
-            local hrp = myHRP()
-            if not hrp then stop = true return end
-            local myP = hrp.Position
-            local d = (myP - pos).Magnitude
-            if d < 14 then arrived = true stop = true return end
-            local localP = seat.CFrame:PointToObjectSpace(pos)
-            local steer = math.clamp(localP.X / 8 * driveSign, -1, 1)
-            seat.Throttle = 1
-            seat.Steer = steer
-            local now = os.clock()
-            if lastD and d > lastD + 1 and (now - lastT) > 3 then
-                driveSign = -driveSign
-                lastT = now
-            elseif d < (lastD or 1e9) - 0.5 then
-                lastT = now
-            end
-            lastD = d
-            if lastP and (myP - lastP).Magnitude < 2 and (now - lastT) > 3 then
-                stuckT = stuckT + 1
-            end
-            lastP = myP
-        end)
-        if stop then break end
-        if stuckT >= 1 then
-            pcall(function()
-                seat.Throttle = -1
-                seat.Steer = 0
-            end)
-            task.wait(1.5)
-            pcall(function() seat.Throttle = 1 end)
-            stuckT = 0
-        end
+local function spoof_in_car(seat)
+    -- sit into seat via Sit() — server sees us in vehicle
+    local hum = get_hum(); if not hum then return end
+    if seat:IsA("VehicleSeat") or seat:IsA("Seat") then
+        seat:Sit(hum)
         task.wait(0.3)
     end
-    pcall(function()
-        seat.Throttle = 0
-        seat.Steer = 0
-    end)
-    if not arrived then tapLog("Ghost", "Ziel unerreicht (fest?)") end
-    return arrived
-end
-local ghostIdx = 0
-local ghostDone = {}
-local ghostSpots = {}
-local ghostTick = 0
-local function ghostNotSeated()
-    local hrp = myHRP()
-    local myPos = hrp and hrp.Position or nil
-    local gotOne = false
-    if myPos and fireproximityprompt then
-        local best = findDrive(myPos, 20)
-        if best then pcall(function() fireproximityprompt(best) end) gotOne = true end
-    end
-    pcall(function()
-        local hasOwn = false
-        local v = Workspace:FindFirstChild("Vehicles")
-        if v and myPos then
-            for _, c in ipairs(v:GetChildren()) do
-                if string.find(c.Name, lp.Name, 1, true) then
-                    pcall(function()
-                        local cf, _ = c:GetBoundingBox()
-                        if (myPos - cf.Position).Magnitude < 100 then hasOwn = true end
-                    end)
-                end
-            end
-        end
-        if not hasOwn and myPos and fireproximityprompt then
-            for _, d in ipairs(Workspace:GetDescendants()) do
-                if d:IsA("ProximityPrompt") then
-                    local t = farmTextOf(d)
-                    if string.find(t, "rent", 1, true) or string.find(t, "scooter", 1, true) or string.find(t, "miet", 1, true) or string.find(t, "roller", 1, true) then
-                        local host = farmHost(d)
-                        local pos = host and host.Position or nil
-                        if pos then
-                            local maxD = 12
-                            pcall(function() maxD = (d.MaxActivationDistance or 10) + 3 end)
-                            if (myPos - pos).Magnitude <= maxD then
-                                fireproximityprompt(d)
-                                gotOne = true
-                                break
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    if not gotOne then tapLog("Ghost", "kein Auto nah (Roller weg?)") end
-    task.wait(1.5)
-end
-local function ghostSeated(seat, hum)
-    local m = seat:FindFirstAncestorOfClass("Model")
-    if not m then task.wait(1) return end
-    ghostIt(m)
-    ghostTick = ghostTick + 1
-    if ghostTick % 4 == 1 or #ghostSpots == 0 then ghostSpots = breakSpotsScan() end
-    if #ghostSpots == 0 then
-        tapLog("Ghost", "KEINE Break-Spots (falscher Ort?)")
-        task.wait(1)
-        return
-    end
-    local candList = {}
-    for _, c in ipairs(ghostSpots) do
-        local okc = pcall(function() return c.Parent ~= nil end)
-        if okc then
-            local t = ghostDone[c] or 0
-            if os.clock() - t > 300 then table.insert(candList, c) end
-        end
-    end
-    if #candList == 0 then
-        local oldest, oldestT = nil, 1e18
-        for _, c in ipairs(ghostSpots) do
-            local t = ghostDone[c] or 0
-            if t < oldestT then oldest, oldestT = c, t end
-        end
-        if oldest then candList = { oldest } end
-    end
-    if #candList == 0 then task.wait(1) return end
-    -- NAECHSTER Spot (kein Round-Robin quer über Map)
-    local pr, bestD = nil, 1e9
-    do
-        local hrp0 = myHRP()
-        local myP0 = hrp0 and hrp0.Position or nil
-        for _, c in ipairs(candList) do
-            pcall(function()
-                if c.Parent ~= nil and myP0 then
-                    local h0 = farmHost(c)
-                    local p0 = h0 and h0.Position or nil
-                    if p0 then
-                        local dd = (myP0 - p0).Magnitude
-                        if dd < bestD then pr, bestD = c, dd end
-                    end
-                end
-            end)
-        end
-    end
-    if not pr then return end
-    tapLog("Ghost", "fahre " .. math.floor(bestD) .. "m")
-    local okPr = pcall(function() return pr.Parent ~= nil end)
-    if not okPr then return end
-    local host = farmHost(pr)
-    local pos = host and host.Position or nil
-    if not pos then return end
-    local arrived = driveTo(seat, pos)
-    if not arrived then
-        ghostDone[pr] = os.clock()
-        return
-    end
-    task.wait(0.5)
-    pcall(function() hum.Sit = false end)
-    task.wait(0.6)
-    pcall(function()
-        local hrp = myHRP()
-        if hrp then
-            local best, bestD = nil, 18
-            for _, d in ipairs(Workspace:GetDescendants()) do
-                if d:IsA("BasePart") then
-                    local ln = string.lower(d.Name)
-                    if string.find(ln, "window", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "windshield", 1, true) then
-                        local dd = (hrp.Position - d.Position).Magnitude
-                        if dd < bestD then best, bestD = d, dd end
-                    end
-                end
-            end
-            if best then hrp.CFrame = CFrame.new(hrp.Position, best.Position) end
-        end
-    end)
-    local fist = equipFist()
-    for i = 1, 8 do
-        if not S.ghostFarm then break end
-        pcall(function() if fist then fist:Activate() end end)
-        pcall(function()
-            if fireproximityprompt then
-                local ok2 = pcall(function() return pr.Parent ~= nil end)
-                if ok2 then
-                    fireproximityprompt(pr)
-                    S.farmed = (S.farmed or 0) + 1
-                end
-            end
-        end)
-        task.wait(0.45)
-    end
-    pcall(function()
-        if fireproximityprompt then
-            local hrp = myHRP()
-            local myP = hrp and hrp.Position or nil
-            if myP then
-                for _, pr2 in ipairs(farmFireScan()) do
-                    local ok3 = pcall(function() return pr2.Parent ~= nil end)
-                    if ok3 then
-                        local t = farmTextOf(pr2)
-                        if string.find(t, "take", 1, true) or string.find(t, "collect", 1, true) or string.find(t, "claim", 1, true) then
-                            local h2 = farmHost(pr2)
-                            local p2 = h2 and h2.Position or nil
-                            if p2 and (myP - p2).Magnitude <= 14 then
-                                fireproximityprompt(pr2)
-                                S.farmed = (S.farmed or 0) + 1
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-    pcall(function() ghostDone[pr] = os.clock() end)
-    pcall(function()
-        if fireproximityprompt then
-            for attempt = 1, 6 do
-                if not S.ghostFarm then break end
-                local seatedNow = false
-                pcall(function()
-                    local ch2 = lp.Character
-                    local hum2 = ch2 and ch2:FindFirstChildOfClass("Humanoid")
-                    seatedNow = hum2 and hum2.SeatPart ~= nil
-                end)
-                if seatedNow then break end
-                local hrp = myHRP()
-                local myP = hrp and hrp.Position or nil
-                if myP then
-                    local best = findDrive(myP, 18)
-                    if best then fireproximityprompt(best) end
-                end
-                task.wait(0.8)
-            end
-        end
-    end)
-    task.wait(0.6)
-end
-task.spawn(function()
-    while alive() do
-        pcall(function()
-            if S.ghostFarm then
-                local ch = lp.Character
-                local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-                local seat = hum and hum.SeatPart or nil
-                if hum and hum.Health > 0 and seat then
-                    ghostSeated(seat, hum)
-                elseif hum and hum.Health > 0 then
-                    ghostNotSeated()
-                else
-                    task.wait(1)
-                end
-            else
-                task.wait(1)
-            end
-        end)
-        task.wait(0.2)
-    end
-end)
-
--- FPS-BOOST (einmalig, Rejoin stellt her)
-fpsBoost = function()
-    pcall(function()
-        local L = game:GetService("Lighting")
-        L.GlobalShadows = false
-        for _, v in ipairs(L:GetChildren()) do
-            if v:IsA("PostEffect") or v:IsA("Atmosphere") or v:IsA("Clouds") then
-                pcall(function() v.Enabled = false end)
-            end
-        end
-        for _, v in ipairs(Workspace:GetDescendants()) do
-            if v:IsA("ParticleEmitter") or v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") or v:IsA("Beam") or v:IsA("Trail") then
-                pcall(function() v.Enabled = false end)
-            elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
-                pcall(function() v.Enabled = false end)
-            elseif v:IsA("BasePart") then
-                pcall(function() v.CastShadow = false end)
-            end
-        end
-        tapLog("FPS", "boost an (Rejoin reset)")
-    end)
 end
 
--- Server-Hop (gleiches Spiel, neuer Server) + Fehleranzeige
-pcall(function()
-    game:GetService("TeleportService").TeleportInitFailed:Connect(function(plr, result, msg)
-        tapLog("TP-Fail", tostring(result) .. " " .. tostring(msg))
-    end)
-end)
-serverHop = function()
-    tapLog("Hop", "suche Server...")
-    task.spawn(function()
-        local picked = nil
-        local ok, list = pcall(function()
-            local raw = game:HttpGet("https://games.roblox.com/v1/games/71600459831333/servers/Public?limit=100&excludeFullGames=true")
-            return game:GetService("HttpService"):JSONDecode(raw)
-        end)
-        if ok and list and list.data then
-            local mine = ""
-            pcall(function() mine = game.JobId end)
-            local cands = {}
-            for _, s in ipairs(list.data) do
-                if s.id ~= mine and (s.playing or 0) < (s.maxPlayers or 35) then
-                    table.insert(cands, s)
-                end
-            end
-            if #cands > 0 then
-                picked = cands[math.random(1, #cands)]
-            end
-        end
-        if picked then
-            tapLog("Hop", (picked.playing or "?") .. " Spieler, los...")
-            pcall(function()
-                game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, picked.id, lp)
-            end)
+local function do_car_loot()
+    local root = get_root(); if not root then return end
+    local remote = find_loot_remote()
+    local cars   = find_lootable_cars()
+
+    for _, car in ipairs(cars) do
+        if not cfg.autofarm then break end
+
+        local seat = nil
+        if car:IsA("VehicleSeat") or car:IsA("Seat") then
+            seat = car
         else
-            tapLog("Hop", "Fallback...")
-            pcall(function()
-                game:GetService("TeleportService"):Teleport(game.PlaceId, lp)
-            end)
+            seat = car:FindFirstChildOfClass("VehicleSeat")
+                or car:FindFirstChildOfClass("Seat")
+        end
+
+        if seat then
+            -- tween close to car (not teleport — avoids noclip detect)
+            local target = seat.CFrame * CFrame.new(0, 2, 0)
+            tween_to(target, 0.4)
+
+            -- spoof sit
+            spoof_in_car(seat)
+
+            -- fire any prox prompts inside the car
+            for _, pp in ipairs(seat.Parent and seat.Parent:GetDescendants() or {}) do
+                if pp:IsA("ProximityPrompt") then
+                    pcall(function() fireproximityprompt(pp) end)
+                end
+            end
+
+            -- fire loot remote if found, pass car/seat as arg
+            if remote then
+                if remote:IsA("RemoteEvent") then
+                    pcall(function() remote:FireServer(seat.Parent or seat) end)
+                elseif remote:IsA("RemoteFunction") then
+                    pcall(function() remote:InvokeServer(seat.Parent or seat) end)
+                end
+            end
+
+            task.wait(0.6)
+
+            -- unsit
+            local hum = get_hum()
+            if hum then hum.Sit = false end
+        end
+
+        -- fire any money pickups nearby after loot
+        for _, pp in ipairs(Workspace:GetDescendants()) do
+            if pp:IsA("ProximityPrompt") then
+                local part = pp.Parent
+                if part and part:IsA("BasePart") then
+                    local d = (root.Position - part.Position).Magnitude
+                    if d < 30 then
+                        pcall(function() fireproximityprompt(pp) end)
+                    end
+                end
+            end
+        end
+
+        task.wait(0.5)
+    end
+end
+
+connections["farm_loop"] = RunService.Heartbeat:Connect(function()
+    if cfg.autofarm then
+        task.spawn(do_car_loot)
+        task.wait(3) -- throttle full cycle to every ~3s
+    end
+end)
+
+-- ── INVIS — network-side ─────────────────────────────────────────────────────
+-- sets every part's network owner + destroys render on OTHER clients via
+-- LocalTransparencyModifier is client-only, so we use a tool trick:
+-- replicate transparency via a RemoteEvent if available, else hide via
+-- forcefield flicker + part transparency on server through a tool fire
+-- Most reliable executor method: set transparency on server via a known remote
+-- or use the "hide from others" seat trick. Here we use both layers.
+
+local invis_conn = nil
+
+local function set_invis_local(state)
+    -- layer 1: hide from own screen
+    local c = get_char(); if not c then return end
+    for _, p in ipairs(c:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.LocalTransparencyModifier = state and 1 or 0
+        end
+    end
+end
+
+local function set_invis_network(state)
+    -- layer 2: set actual part Transparency so other clients see it
+    -- requires executor with setflag / set property on server-replicated parts
+    -- works on most executors that allow property sets on non-owned parts
+    local c = get_char(); if not c then return end
+    for _, p in ipairs(c:GetDescendants()) do
+        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+            pcall(function() p.Transparency = state and 1 or 0 end)
+        end
+    end
+    -- also hide accessories / hat handles
+    for _, p in ipairs(c:GetDescendants()) do
+        if p:IsA("SpecialMesh") or p:IsA("Decal") then
+            pcall(function() p.Transparency = state and 1 or 0 end)
+        end
+    end
+    -- humanoid display
+    local hum = get_hum()
+    if hum then
+        pcall(function()
+            hum.DisplayDistanceType = state
+                and Enum.HumanoidDisplayDistanceType.None
+                or  Enum.HumanoidDisplayDistanceType.Viewer
+        end)
+    end
+end
+
+local function apply_invis(state)
+    set_invis_local(state)
+    set_invis_network(state)
+end
+
+connections["invis_respawn"] = lp.CharacterAdded:Connect(function()
+    task.wait(1)
+    if cfg.invis then apply_invis(true) end
+end)
+
+-- ── GODMODE — server-replicated ───────────────────────────────────────────────
+-- method 1: hook humanoid HealthChanged and reset via remote if available
+-- method 2: kill the TakeDamage function on our humanoid
+-- method 3: freeze HP via a tight heartbeat write
+-- all three stacked
+
+local function hook_godmode()
+    local hum = get_hum(); if not hum then return end
+
+    -- method A: override TakeDamage
+    local old_td = hum.TakeDamage
+    hum.TakeDamage = function(self, amount)
+        if cfg.godmode then return end
+        return old_td(self, amount)
+    end
+
+    -- method B: HealthChanged → restore
+    connections["gm_health"] = hum.HealthChanged:Connect(function(hp)
+        if cfg.godmode and hp < hum.MaxHealth then
+            hum.Health = hum.MaxHealth
+        end
+    end)
+
+    -- method C: tight heartbeat lock
+    connections["gm_beat"] = RunService.Heartbeat:Connect(function()
+        if not cfg.godmode then return end
+        local h = get_hum()
+        if h and h.Health < h.MaxHealth then
+            pcall(function() h.Health = h.MaxHealth end)
         end
     end)
 end
 
+hook_godmode()
 
-warn("[SLR] boot v3 end ok")
-status.Text = "v3 bereit (alles AUS)."
-pcall(function()
-    game:GetService("StarterGui"):SetCore("SendNotification", { Title = "SLR v5", Text = "v5 ENDE erreicht", Duration = 4 })
+connections["gm_respawn"] = lp.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    hook_godmode()
 end)
+
+-- ── UI ────────────────────────────────────────────────────────────────────────
+local Gui = Instance.new("ScreenGui")
+Gui.Name           = "SLSuite"
+Gui.ResetOnSpawn   = false
+Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Gui.IgnoreGuiInset = true
+
+pcall(function()
+    if syn and syn.protect_gui then syn.protect_gui(Gui) end
+    Gui.Parent = game:GetService("CoreGui")
+end)
+if not Gui.Parent or Gui.Parent ~= game:GetService("CoreGui") then
+    Gui.Parent = lp:WaitForChild("PlayerGui")
+end
+
+-- main frame
+local Frame = Instance.new("Frame", Gui)
+Frame.Size             = UDim2.new(0, 230, 0, 340)
+Frame.Position         = UDim2.new(0, 16, 0, 16)
+Frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+Frame.BorderSizePixel  = 0
+Frame.ClipsDescendants = true
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 10)
+
+-- drop shadow simulation
+local Shadow = Instance.new("Frame", Frame)
+Shadow.Size              = UDim2.new(1, 6, 1, 6)
+Shadow.Position          = UDim2.new(0, -3, 0, -3)
+Shadow.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
+Shadow.BackgroundTransparency = 0.6
+Shadow.BorderSizePixel   = 0
+Shadow.ZIndex            = -1
+Instance.new("UICorner", Shadow).CornerRadius = UDim.new(0, 12)
+
+-- title bar
+local Bar = Instance.new("Frame", Frame)
+Bar.Size             = UDim2.new(1, 0, 0, 34)
+Bar.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+Bar.BorderSizePixel  = 0
+Instance.new("UICorner", Bar).CornerRadius = UDim.new(0, 10)
+
+local TLbl = Instance.new("TextLabel", Bar)
+TLbl.Size                  = UDim2.new(1, -40, 1, 0)
+TLbl.Position              = UDim2.new(0, 12, 0, 0)
+TLbl.BackgroundTransparency= 1
+TLbl.TextColor3            = Color3.fromRGB(180, 180, 255)
+TLbl.Font                  = Enum.Font.GothamBold
+TLbl.TextSize              = 13
+TLbl.TextXAlignment        = Enum.TextXAlignment.Left
+TLbl.Text                  = "Street Life Suite"
+
+local XBtn = Instance.new("TextButton", Bar)
+XBtn.Size               = UDim2.new(0, 26, 0, 26)
+XBtn.Position           = UDim2.new(1, -30, 0.5, -13)
+XBtn.BackgroundColor3   = Color3.fromRGB(180, 40, 40)
+XBtn.TextColor3         = Color3.fromRGB(255, 255, 255)
+XBtn.Font               = Enum.Font.GothamBold
+XBtn.TextSize           = 14
+XBtn.Text               = "✕"
+XBtn.BorderSizePixel    = 0
+Instance.new("UICorner", XBtn).CornerRadius = UDim.new(0, 6)
+
+-- drag
+local drag_active, drag_origin, frame_origin
+Bar.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then
+        drag_active  = true
+        drag_origin  = i.Position
+        frame_origin = Frame.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if drag_active and i.UserInputType == Enum.UserInputType.MouseMovement then
+        local d = i.Position - drag_origin
+        Frame.Position = UDim2.new(
+            frame_origin.X.Scale, frame_origin.X.Offset + d.X,
+            frame_origin.Y.Scale, frame_origin.Y.Offset + d.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then drag_active = false end
+end)
+
+-- scroll body
+local Scroll = Instance.new("ScrollingFrame", Frame)
+Scroll.Size                   = UDim2.new(1, 0, 1, -34)
+Scroll.Position               = UDim2.new(0, 0, 0, 34)
+Scroll.BackgroundTransparency = 1
+Scroll.BorderSizePixel        = 0
+Scroll.ScrollBarThickness     = 3
+Scroll.ScrollBarImageColor3   = Color3.fromRGB(80, 80, 130)
+Scroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+Scroll.CanvasSize             = UDim2.new(0,0,0,0)
+
+local List = Instance.new("UIListLayout", Scroll)
+List.Padding   = UDim.new(0, 5)
+List.SortOrder = Enum.SortOrder.LayoutOrder
+local Pad = Instance.new("UIPadding", Scroll)
+Pad.PaddingLeft  = UDim.new(0, 8)
+Pad.PaddingRight = UDim.new(0, 8)
+Pad.PaddingTop   = UDim.new(0, 8)
+
+local row_order = 0
+local function next_order() row_order = row_order + 1; return row_order end
+
+local CON  = Color3.fromRGB(60, 210, 100)
+local COFF = Color3.fromRGB(55, 55, 75)
+
+-- toggle factory
+local function make_toggle(label, key, cb)
+    local R = Instance.new("Frame", Scroll)
+    R.Size             = UDim2.new(1, 0, 0, 38)
+    R.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    R.BorderSizePixel  = 0
+    R.LayoutOrder      = next_order()
+    Instance.new("UICorner", R).CornerRadius = UDim.new(0, 7)
+
+    local L = Instance.new("TextLabel", R)
+    L.Size                   = UDim2.new(1, -58, 1, 0)
+    L.Position               = UDim2.new(0, 12, 0, 0)
+    L.BackgroundTransparency = 1
+    L.TextColor3             = Color3.fromRGB(200, 200, 215)
+    L.Font                   = Enum.Font.Gotham
+    L.TextSize               = 12
+    L.TextXAlignment         = Enum.TextXAlignment.Left
+    L.Text                   = label
+
+    local K = Instance.new("Frame", R)
+    K.Size             = UDim2.new(0, 42, 0, 22)
+    K.Position         = UDim2.new(1, -50, 0.5, -11)
+    K.BackgroundColor3 = cfg[key] and CON or COFF
+    K.BorderSizePixel  = 0
+    Instance.new("UICorner", K).CornerRadius = UDim.new(0, 11)
+
+    local P = Instance.new("Frame", K)
+    P.Size             = UDim2.new(0, 18, 0, 18)
+    P.Position         = cfg[key] and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)
+    P.BackgroundColor3 = Color3.fromRGB(255,255,255)
+    P.BorderSizePixel  = 0
+    Instance.new("UICorner", P).CornerRadius = UDim.new(0, 9)
+
+    local function refresh()
+        local on = cfg[key]
+        TweenService:Create(K, TweenInfo.new(0.12), {BackgroundColor3 = on and CON or COFF}):Play()
+        TweenService:Create(P, TweenInfo.new(0.12), {
+            Position = on and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)
+        }):Play()
+    end
+
+    R.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then
+            cfg[key] = not cfg[key]
+            refresh()
+            if cb then cb(cfg[key]) end
+        end
+    end)
+end
+
+-- FOV slider — step 50, range 50–500
+local function make_fov_slider()
+    local R = Instance.new("Frame", Scroll)
+    R.Size             = UDim2.new(1, 0, 0, 58)
+    R.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    R.BorderSizePixel  = 0
+    R.LayoutOrder      = next_order()
+    Instance.new("UICorner", R).CornerRadius = UDim.new(0, 7)
+
+    local title = Instance.new("TextLabel", R)
+    title.Size                   = UDim2.new(1, 0, 0, 20)
+    title.Position               = UDim2.new(0, 12, 0, 4)
+    title.BackgroundTransparency = 1
+    title.TextColor3             = Color3.fromRGB(200, 200, 215)
+    title.Font                   = Enum.Font.Gotham
+    title.TextSize               = 12
+    title.TextXAlignment         = Enum.TextXAlignment.Left
+    title.Text                   = "Silent Aim FOV: " .. cfg.silent_fov .. "px"
+
+    -- minus button
+    local Minus = Instance.new("TextButton", R)
+    Minus.Size             = UDim2.new(0, 26, 0, 22)
+    Minus.Position         = UDim2.new(0, 12, 0, 28)
+    Minus.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    Minus.TextColor3       = Color3.fromRGB(220,220,220)
+    Minus.Font             = Enum.Font.GothamBold
+    Minus.TextSize         = 14
+    Minus.Text             = "−"
+    Minus.BorderSizePixel  = 0
+    Instance.new("UICorner", Minus).CornerRadius = UDim.new(0, 5)
+
+    -- slider track
+    local Track = Instance.new("Frame", R)
+    Track.Size             = UDim2.new(1, -82, 0, 8)
+    Track.Position         = UDim2.new(0, 44, 0, 35)
+    Track.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    Track.BorderSizePixel  = 0
+    Instance.new("UICorner", Track).CornerRadius = UDim.new(0, 4)
+
+    local Fill = Instance.new("Frame", Track)
+    Fill.Size             = UDim2.new((cfg.silent_fov - 50) / 450, 0, 1, 0)
+    Fill.BackgroundColor3 = Color3.fromRGB(100, 140, 255)
+    Fill.BorderSizePixel  = 0
+    Instance.new("UICorner", Fill).CornerRadius = UDim.new(0, 4)
+
+    -- plus button
+    local Plus = Instance.new("TextButton", R)
+    Plus.Size             = UDim2.new(0, 26, 0, 22)
+    Plus.Position         = UDim2.new(1, -38, 0, 28)
+    Plus.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    Plus.TextColor3       = Color3.fromRGB(220,220,220)
+    Plus.Font             = Enum.Font.GothamBold
+    Plus.TextSize         = 14
+    Plus.Text             = "+"
+    Plus.BorderSizePixel  = 0
+    Instance.new("UICorner", Plus).CornerRadius = UDim.new(0, 5)
+
+    local function set_fov(v)
+        cfg.silent_fov = math.clamp(math.floor(v / 50 + 0.5) * 50, 50, 500)
+        title.Text = "Silent Aim FOV: " .. cfg.silent_fov .. "px"
+        Fill.Size  = UDim2.new((cfg.silent_fov - 50) / 450, 0, 1, 0)
+    end
+
+    Minus.MouseButton1Click:Connect(function() set_fov(cfg.silent_fov - 50) end)
+    Plus.MouseButton1Click:Connect(function()  set_fov(cfg.silent_fov + 50) end)
+
+    -- drag on track
+    local sl_drag = false
+    Track.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then sl_drag = true end
+    end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then sl_drag = false end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if sl_drag and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local rel = math.clamp(
+                (i.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+            set_fov(50 + rel * 450)
+        end
+    end)
+end
+
+-- wire toggles
+make_toggle("Silent Aim",        "silent_aim", nil)
+make_toggle("Player ESP",        "esp",        nil)
+make_toggle("Auto Farm (Cars)",  "autofarm",   nil)
+make_toggle("Unsichtbar",        "invis",      function(on) apply_invis(on) end)
+make_toggle("Godmode",           "godmode",    nil)
+make_fov_slider()
+
+-- ── KILL ─────────────────────────────────────────────────────────────────────
+local function kill()
+    for k, c in pairs(connections) do
+        if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
+        connections[k] = nil
+    end
+    if mt and orig_index then
+        mt.__index = orig_index
+        pcall(function() setreadonly(mt, true) end)
+    end
+    for plr in pairs(esp_drawings) do rm_esp(plr) end
+    if fov_circle then fov_circle:Remove(); fov_circle = nil end
+    apply_invis(false)
+    -- restore TakeDamage
+    local hum = get_hum()
+    if hum then
+        local h2 = get_hum()
+        if h2 then pcall(function() h2.Health = h2.MaxHealth end) end
+    end
+    Gui:Destroy()
+end
+
+XBtn.MouseButton1Click:Connect(kill)
