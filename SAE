@@ -117,6 +117,19 @@ frame.BorderSizePixel = 0
 frame.Active = true
 frame.Draggable = true
 frame.Parent = gui
+-- AUTO-FIT: Menü skaliert auf jede Bildschirmgröße (LDPlayer/Handy)
+local lastFrameH = 562
+local uiScale = Instance.new("UIScale")
+uiScale.Scale = 1
+uiScale.Parent = frame
+local function fitScale()
+    pcall(function()
+        local cam = Workspace.CurrentCamera
+        local vs = cam and cam.ViewportSize or Vector2.new(800, 600)
+        local s = math.min((vs.Y - 30) / math.max(lastFrameH, 1), (vs.X - 20) / 500, 1)
+        uiScale.Scale = math.clamp(s, 0.45, 1)
+    end)
+end
 local frameC = Instance.new("UICorner")
 frameC.CornerRadius = UDim.new(0, 10)
 frameC.Parent = frame
@@ -779,7 +792,9 @@ local function relayout()
     elseif curTab == "esp" then by = by + rh
     elseif curTab == "player" then by = by + 172
     else by = by + 138 end
-    frame.Size = UDim2.new(0, 500, 0, by + 30 + 10)
+    lastFrameH = by + 30 + 10
+    frame.Size = UDim2.new(0, 500, 0, lastFrameH)
+    fitScale()
 end
 leftHead.Activated:Connect(function()
     leftOpen = not leftOpen
@@ -840,6 +855,15 @@ tabFarm.Activated:Connect(function() showTab("farm") tapLog("Tab", "farm") end)
 tabPlayer.Activated:Connect(function() showTab("player") tapLog("Tab", "player") end)
 rightCard.Visible = false
 relayout()
+pcall(function()
+    local cam = Workspace.CurrentCamera
+    if cam then
+        cam:GetPropertyChangedSignal("ViewportSize"):Connect(function() fitScale() end)
+    end
+end)
+task.spawn(function()
+    for i = 1, 3 do task.wait(1) pcall(fitScale) end
+end)
 
 -- (AIM-Touch-Button entfernt auf User-Wunsch)
 
