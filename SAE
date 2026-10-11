@@ -2006,6 +2006,15 @@ restoreGhost = function()
     ghostAnchor = {}
     ghostVeh = nil
 end
+-- Anker nur während Arbeit am Auto (danach lösen: weniger Replikation = weniger Clip-Alarm)
+local function unanchorVeh()
+    for part, _ in pairs(ghostAnchor) do
+        pcall(function()
+            if part.Parent ~= nil then part.Anchored = false end
+        end)
+    end
+    ghostAnchor = {}
+end
 local function ghostIt(m)
     if ghostVeh ~= m then restoreGhost() end
     ghostVeh = m
@@ -2399,6 +2408,7 @@ local function ghostSeated(seat, hum)
         end
     end
     pcall(function() ghostDone[pr] = os.clock() end)
+    unanchorVeh()
     ghostResit()
     task.wait(0.6)
 end
