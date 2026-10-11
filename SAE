@@ -1965,6 +1965,7 @@ end
 
 -- GHOST-CAR-FARM (hin-TP im Sitz -> AUSSTEIGEN (normal stehen) -> Faust+Prompt -> wieder einsteigen)
 local ghostOrig = {}
+local ghostAnchor = {}
 local ghostVeh = nil
 -- NUR Transparency (lokal, repliziert nie). CanCollide/Anchored fassen wir NICHT
 -- an (repliziert -> "No clip Erkennung"). Collision hält Roller am Boden.
@@ -1974,7 +1975,13 @@ restoreGhost = function()
             if part.Parent ~= nil then part.Transparency = tr end
         end)
     end
+    for part, an in pairs(ghostAnchor) do
+        pcall(function()
+            if part.Parent ~= nil then part.Anchored = an end
+        end)
+    end
     ghostOrig = {}
+    ghostAnchor = {}
     ghostVeh = nil
 end
 local function ghostIt(m)
@@ -2229,6 +2236,13 @@ local function ghostSeated(seat, hum)
     end
     pcall(function()
         m:PivotTo(CFrame.new(ghostLanding(pos, { lp.Character, m })))
+        -- sofort verankern: kein Wegrollen bei Aufprall (Restore bei AUS/X)
+        for _, d in ipairs(m:GetDescendants()) do
+            if d:IsA("BasePart") and not d.Anchored then
+                if ghostAnchor[d] == nil then ghostAnchor[d] = false end
+                d.Anchored = true
+            end
+        end
     end)
     ghostLastTP = os.clock()
     task.wait(0.7)
