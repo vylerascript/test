@@ -111,12 +111,13 @@ gui.Parent = root
 
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, 500, 0, 562)
-frame.Position = UDim2.new(0.5, -250, 0.5, -264)
 frame.BackgroundColor3 = Color3.fromRGB(14, 16, 22)
 frame.BorderSizePixel = 0
 frame.Active = true
 frame.Draggable = true
 frame.Parent = gui
+frame.AnchorPoint = Vector2.new(0.5, 0.5)
+frame.Position = UDim2.new(0.5, 0, 0.5, 0)
 -- AUTO-FIT: Menü skaliert auf jede Bildschirmgröße (LDPlayer/Handy)
 local lastFrameH = 562
 local uiScale = Instance.new("UIScale")
@@ -126,7 +127,11 @@ local function fitScale()
     pcall(function()
         local cam = Workspace.CurrentCamera
         local vs = cam and cam.ViewportSize or Vector2.new(800, 600)
-        local s = math.min((vs.Y - 30) / math.max(lastFrameH, 1), (vs.X - 20) / 500, 1)
+        local h = frame.AbsoluteSize.Y
+        if h < 10 then h = lastFrameH end
+        local w = frame.AbsoluteSize.X
+        if w < 10 then w = 500 end
+        local s = math.min((vs.Y - 30) / math.max(h, 1), (vs.X - 20) / math.max(w, 1), 1)
         uiScale.Scale = math.clamp(s, 0.45, 1)
     end)
 end
@@ -795,6 +800,13 @@ local function relayout()
     lastFrameH = by + 30 + 10
     frame.Size = UDim2.new(0, 500, 0, lastFrameH)
     fitScale()
+    task.spawn(function()
+        pcall(function()
+            RunService.RenderStepped:Wait()
+            RunService.RenderStepped:Wait()
+            if alive() then fitScale() end
+        end)
+    end)
 end
 leftHead.Activated:Connect(function()
     leftOpen = not leftOpen
