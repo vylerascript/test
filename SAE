@@ -2175,6 +2175,17 @@ local ghostIdx = 0
 local ghostDone = {}
 local ghostSpots = {}
 local ghostTick = 0
+local ghostFails = 0
+local ghostPauseUntil = 0
+local function ghostMoney()
+    local m = nil
+    pcall(function()
+        local d = lp:FindFirstChild("Data")
+        local v = d and d:FindFirstChild("Money")
+        m = v and v.Value or nil
+    end)
+    return m
+end
 local function ghostNotSeated()
     local hrp = myHRP()
     local myPos = hrp and hrp.Position or nil
@@ -2221,6 +2232,11 @@ local function ghostNotSeated()
     task.wait(1.5)
 end
 local function ghostSeated(seat, hum)
+    if os.clock() < ghostPauseUntil then
+        tapLog("Ghost", "Pause " .. math.floor(ghostPauseUntil - os.clock()) .. "s (Game-CD)")
+        task.wait(5)
+        return
+    end
     local m = seat:FindFirstAncestorOfClass("Model")
     if not m then task.wait(1) return end
     ghostIt(m)
@@ -2307,6 +2323,7 @@ local function ghostSeated(seat, hum)
     task.wait(0.5)
     pcall(function() hum.Sit = false end)
     task.wait(0.6)
+    local m0 = ghostMoney()
     pcall(function()
         local hrp = myHRP()
         if hrp then
@@ -2360,6 +2377,19 @@ local function ghostSeated(seat, hum)
             end
         end
     end)
+    task.wait(2)
+    do
+        local m1 = ghostMoney()
+        if m0 ~= nil and m1 ~= nil and (m1 - m0) > 0 then
+            ghostFails = 0
+        else
+            ghostFails = ghostFails + 1
+            if ghostFails >= 2 then
+                ghostPauseUntil = os.clock() + 180
+                tapLog("Ghost", "Game-Cooldown! 3 Min Pause")
+            end
+        end
+    end
     pcall(function() ghostDone[pr] = os.clock() end)
     pcall(function()
         if fireproximityprompt then
