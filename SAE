@@ -2142,7 +2142,23 @@ local ghostIdx = 0
 local ghostDone = {}
 local ghostPaid = {}
 local ghostSpots = {}
+local ghostGlass = {}
 local ghostTick = 0
+local function glassScan()
+    local found = {}
+    pcall(function()
+        for _, d in ipairs(Workspace:GetDescendants()) do
+            if d:IsA("BasePart") then
+                local ln = string.lower(d.Name)
+                if string.find(ln, "window", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "windshield", 1, true) then
+                    table.insert(found, d)
+                end
+            end
+            if #found >= 250 then break end
+        end
+    end)
+    return found
+end
 local ghostFails = 0
 local ghostSkips = 0
 local ghostPauseUntil = 0
@@ -2251,6 +2267,7 @@ local function ghostSeated(seat, hum)
     ghostIt(m)
     ghostTick = ghostTick + 1
     if ghostTick % 4 == 1 or #ghostSpots == 0 then ghostSpots = breakSpotsScan() end
+    if ghostTick % 30 == 1 or #ghostGlass == 0 then ghostGlass = glassScan() end
     if #ghostSpots == 0 then
         tapLog("Ghost", "KEINE Break-Spots (falscher Ort?)")
         task.wait(1)
@@ -2433,7 +2450,18 @@ local function ghostSeated(seat, hum)
         end
     end
     task.wait(0.5)
-    pcall(function() hum.Sit = false end)
+    -- Ausstieg mit Retry (max 3x prüfen)
+    for di = 1, 3 do
+        pcall(function() hum.Sit = false end)
+        task.wait(0.4)
+        local out = false
+        pcall(function()
+            local ch = lp.Character
+            local h2 = ch and ch:FindFirstChildOfClass("Humanoid")
+            out = h2 and h2.SeatPart == nil
+        end)
+        if out then break end
+    end
     task.wait(0.6)
     -- Spieler selbst frei? (erst ab 3+ Teilen = wirklich eingebaut; 1 Wand ok)
     local pClear = false
@@ -2509,18 +2537,21 @@ local function ghostSeated(seat, hum)
         return
     end
     local m0 = ghostMoney()
+    tapLog("Ghost", "arbeite...")
     pcall(function()
         local hrp = myHRP()
         if hrp then
             local best, bestD = nil, 18
-            for _, d in ipairs(Workspace:GetDescendants()) do
-                if d:IsA("BasePart") then
-                    local ln = string.lower(d.Name)
-                    if string.find(ln, "window", 1, true) or string.find(ln, "glass", 1, true) or string.find(ln, "windshield", 1, true) then
-                        local dd = (hrp.Position - d.Position).Magnitude
-                        if dd < bestD then best, bestD = d, dd end
+            for _, d in ipairs(ghostGlass) do
+                local ok = false
+                local dd = 1e9
+                pcall(function()
+                    if d.Parent ~= nil then
+                        dd = (hrp.Position - d.Position).Magnitude
+                        ok = true
                     end
-                end
+                end)
+                if ok and dd < bestD then best, bestD = d, dd end
             end
             if best then hrp.CFrame = CFrame.new(hrp.Position, best.Position) end
         end
@@ -2554,11 +2585,11 @@ local function ghostSeated(seat, hum)
             local hrp = myHRP()
             local myP = hrp and hrp.Position or nil
             if myP then
-                for _, pr2 in ipairs(farmFireScan()) do
-                    local ok3 = pcall(function() return pr2.Parent ~= nil end)
-                    if ok3 then
+                for _, pr2 in ipairs(Workspace:GetDescendants()) do
+                    if pr2:IsA("ProximityPrompt") and pr2.Parent ~= nil then
                         local t = farmTextOf(pr2)
-                        if string.find(t, "take", 1, true) or string.find(t, "collect", 1, true) or string.find(t, "claim", 1, true) then
+                        if string.find(t, "take", 1, true) or string.find(t, "collect", 1, true) or string.find(t, "claim", 1, true)
+                            or string.find(t, "nehm", 1, true) or string.find(t, "sammel", 1, true) or string.find(t, "abhol", 1, true) then
                             local h2 = farmHost(pr2)
                             local p2 = h2 and h2.Position or nil
                             if p2 and (myP - p2).Magnitude <= 14 then
