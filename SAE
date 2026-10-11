@@ -1987,33 +1987,16 @@ end
 
 -- GHOST-CAR-FARM (hin-TP im Sitz -> AUSSTEIGEN (normal stehen) -> Faust+Prompt -> wieder einsteigen)
 local ghostOrig = {}
-local ghostAnchor = {}
 local ghostVeh = nil
--- NUR Transparency (lokal, repliziert nie). CanCollide/Anchored fassen wir NICHT
--- an (repliziert -> "No clip Erkennung"). Collision hält Roller am Boden.
+-- NUR Transparency (lokal, repliziert nie). KEIN Anchored/Collide (repliziert -> Clip-Alarm).
 restoreGhost = function()
     for part, tr in pairs(ghostOrig) do
         pcall(function()
             if part.Parent ~= nil then part.Transparency = tr end
         end)
     end
-    for part, an in pairs(ghostAnchor) do
-        pcall(function()
-            if part.Parent ~= nil then part.Anchored = an end
-        end)
-    end
     ghostOrig = {}
-    ghostAnchor = {}
     ghostVeh = nil
-end
--- Anker nur während Arbeit am Auto (danach lösen: weniger Replikation = weniger Clip-Alarm)
-local function unanchorVeh()
-    for part, _ in pairs(ghostAnchor) do
-        pcall(function()
-            if part.Parent ~= nil then part.Anchored = false end
-        end)
-    end
-    ghostAnchor = {}
 end
 local function ghostIt(m)
     if ghostVeh ~= m then restoreGhost() end
@@ -2320,12 +2303,18 @@ local function ghostSeated(seat, hum)
     end
     pcall(function()
         m:PivotTo(CFrame.new(land))
-        -- sofort verankern: kein Wegrollen bei Aufprall (Restore bei AUS/X)
-        for _, d in ipairs(m:GetDescendants()) do
-            if d:IsA("BasePart") and not d.Anchored then
-                if ghostAnchor[d] == nil then ghostAnchor[d] = false end
-                d.Anchored = true
-            end
+    end)
+    -- exakt auf Boden setzen (kein Schweben!): Unterkante auf Boden+0.2
+    pcall(function()
+        local cf, sz = m:GetBoundingBox()
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { lp.Character, m }
+        params.IgnoreWater = true
+        local hit = Workspace:Raycast(cf.Position + Vector3.new(0, 2, 0), Vector3.new(0, -20, 0), params)
+        if hit and hit.Position then
+            local bottomNow = cf.Position.Y - sz.Y / 2
+            m:PivotTo(cf + Vector3.new(0, (hit.Position.Y + 0.2) - bottomNow, 0))
         end
     end)
     ghostLastTP = os.clock()
@@ -2494,7 +2483,6 @@ local function ghostSeated(seat, hum)
         end
     end
     pcall(function() ghostDone[pr] = os.clock() end)
-    unanchorVeh()
     ghostResit()
     task.wait(0.6)
 end
