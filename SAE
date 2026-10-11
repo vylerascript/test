@@ -2033,6 +2033,29 @@ local function equipFist()
     end
     return fist
 end
+-- Autoteil? (Motorhaube/Dach zählt NICHT als Boden)
+local function isCarPart(part)
+    local ok, res = pcall(function()
+        local n = string.lower(part.Name)
+        if string.find(n, "window", 1, true) or string.find(n, "glass", 1, true) or string.find(n, "windshield", 1, true)
+            or string.find(n, "hood", 1, true) or string.find(n, "bonnet", 1, true) or string.find(n, "wheel", 1, true)
+            or string.find(n, "tire", 1, true) or string.find(n, "chassis", 1, true) or string.find(n, "bumper", 1, true)
+            or string.find(n, "trunk", 1, true) then
+            return true
+        end
+        local p = part.Parent
+        while p and p ~= workspace do
+            local mn = string.lower(p.Name)
+            if string.find(mn, "car", 1, true) or string.find(mn, "rob", 1, true) or string.find(mn, "auto", 1, true) or string.find(mn, "vehicle", 1, true) then
+                return true
+            end
+            if not p:IsA("Model") and not p:IsA("Folder") then break end
+            p = p.Parent
+        end
+        return false
+    end)
+    return ok and res
+end
 -- Landeplatz: neben Rob-Auto auf Boden, mit Freiraum-Check (nicht IN Wand/Auto)
 local function ghostLanding(pos, ignore)
     local best, bestScore = nil, 1e9
@@ -2045,7 +2068,8 @@ local function ghostLanding(pos, ignore)
             params.IgnoreWater = true
             return Workspace:Raycast(cand + Vector3.new(0, 2, 0), Vector3.new(0, -10, 0), params)
         end)
-        if ok and hit and hit.Position then
+        if ok and hit and hit.Position and hit.Instance then
+            if isCarPart(hit.Instance) then continue end
             local drop = cand.Y - hit.Position.Y
             if drop >= 0 and drop <= 6 then
                 local free = false
