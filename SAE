@@ -591,8 +591,8 @@ tabPlayerC.CornerRadius = UDim.new(0, 8)
 tabPlayerC.Parent = tabPlayer
 tabPlayer.Parent = frame
 
-local leftCard = mkCard(frame, 12, 132, 238, 326)
-local rightCard = mkCard(frame, 254, 132, 234, 416)
+local leftCard = mkCard(frame, 12, 132, 476, 326)
+local rightCard = mkCard(frame, 12, 132, 476, 416)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
 
@@ -790,8 +790,8 @@ local leftOpen, rightOpen = true, true
 local function relayout()
     local lh = leftOpen and 326 or 26
     local rh = rightOpen and 416 or 26
-    leftCard.Size = UDim2.new(0, 238, 0, lh)
-    rightCard.Size = UDim2.new(0, 234, 0, rh)
+    leftCard.Size = UDim2.new(0, 476, 0, lh)
+    rightCard.Size = UDim2.new(0, 476, 0, rh)
     local by = 132 + 8
     if curTab == "main" then by = by + lh
     elseif curTab == "esp" then by = by + rh
