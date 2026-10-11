@@ -2435,7 +2435,7 @@ local function ghostSeated(seat, hum)
     task.wait(0.5)
     pcall(function() hum.Sit = false end)
     task.wait(0.6)
-    -- Spieler selbst frei? (nicht in Wand gelandet) sonst gleich weiter
+    -- Spieler selbst frei? (erst ab 3+ Teilen = wirklich eingebaut; 1 Wand ok)
     local pClear = false
     pcall(function()
         local hrp = myHRP()
@@ -2443,8 +2443,12 @@ local function ghostSeated(seat, hum)
             local op = OverlapParams.new()
             op.FilterType = Enum.RaycastFilterType.Exclude
             op.FilterDescendantsInstances = { lp.Character, m }
-            op.MaxParts = 5
-            pClear = #Workspace:GetPartBoundsInBox(CFrame.new(hrp.Position + Vector3.new(0, 0.5, 0)), Vector3.new(3, 3, 3), op) == 0
+            op.MaxParts = 8
+            local n = 0
+            for _, pt in ipairs(Workspace:GetPartBoundsInBox(CFrame.new(hrp.Position + Vector3.new(0, 0.5, 0)), Vector3.new(2, 2.5, 2), op)) do
+                if not isCarPart(pt) then n = n + 1 end
+            end
+            pClear = n < 3
         end
     end)
     if not pClear then
