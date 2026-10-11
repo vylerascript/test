@@ -2322,8 +2322,8 @@ local function ghostSeated(seat, hum)
         else
             ghostFails = ghostFails + 1
             if ghostFails >= 2 then
-                ghostPauseUntil = os.clock() + 60
-                tapLog("Ghost", "Game-CD! 60s Pause")
+                ghostPauseUntil = os.clock() + 50
+                tapLog("Ghost", "Game-CD! 50s Pause")
             end
         end
     end
