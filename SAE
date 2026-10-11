@@ -2177,6 +2177,8 @@ local ghostSpots = {}
 local ghostTick = 0
 local ghostFails = 0
 local ghostPauseUntil = 0
+local ghostPauseStart = 0
+local ghostProbeAt = 0
 local function ghostMoney()
     local m = nil
     pcall(function()
@@ -2233,7 +2235,64 @@ local function ghostNotSeated()
 end
 local function ghostSeated(seat, hum)
     if os.clock() < ghostPauseUntil then
-        tapLog("Ghost", "Pause " .. math.floor(ghostPauseUntil - os.clock()) .. "s (Game-CD)")
+        -- Pause mit Minutentest: 1 Auto probieren, zahlt es -> CD vorbei
+        if os.clock() >= ghostProbeAt then
+            ghostProbeAt = os.clock() + 60
+            local m0 = seat:FindFirstAncestorOfClass("Model")
+            if m0 then
+                ghostIt(m0)
+                local spots = breakSpotsScan()
+                -- ältestes Auto probieren (frischeste Chance nach CD)
+                local pr, oldestT = nil, 1e18
+                for _, c in ipairs(spots) do
+                    pcall(function()
+                        if c.Parent ~= nil then
+                            local t = ghostDone[c] or 0
+                            if t < oldestT then pr, oldestT = c, t end
+                        end
+                    end)
+                end
+                if pr then
+                    local before = ghostMoney()
+                    local host = farmHost(pr)
+                    local pos = host and host.Position or nil
+                    if pos then
+                        pcall(function()
+                            m0:PivotTo(CFrame.new(ghostLanding(pos, { lp.Character, m0 })))
+                        end)
+                        ghostLastTP = os.clock()
+                        task.wait(0.7)
+                        pcall(function() hum.Sit = false end)
+                        task.wait(0.6)
+                        local fist = equipFist()
+                        for i = 1, 4 do
+                            if not S.ghostFarm then break end
+                            pcall(function() if fist then fist:Activate() end end)
+                            pcall(function()
+                                if fireproximityprompt then fireproximityprompt(pr) end
+                            end)
+                            task.wait(0.45)
+                        end
+                        task.wait(2)
+                        local after = ghostMoney()
+                        if before ~= nil and after ~= nil and (after - before) > 0 then
+                            ghostPauseUntil = 0
+                            ghostFails = 0
+                            ghostProbeAt = 0
+                            tapLog("Ghost", "CD vorbei (~" .. math.floor((os.clock() - ghostPauseStart) / 60) .. " Min)!")
+                        else
+                            tapLog("Ghost", "noch CD, weiter Pause")
+                        end
+                    end
+                else
+                    tapLog("Ghost", "Pause " .. math.floor(ghostPauseUntil - os.clock()) .. "s")
+                end
+            else
+                tapLog("Ghost", "Pause " .. math.floor(ghostPauseUntil - os.clock()) .. "s")
+            end
+        else
+            tapLog("Ghost", "Pause " .. math.floor(ghostPauseUntil - os.clock()) .. "s (Game-CD)")
+        end
         task.wait(5)
         return
     end
@@ -2386,7 +2445,9 @@ local function ghostSeated(seat, hum)
             ghostFails = ghostFails + 1
             if ghostFails >= 2 then
                 ghostPauseUntil = os.clock() + 180
-                tapLog("Ghost", "Game-Cooldown! 3 Min Pause")
+                ghostPauseStart = os.clock()
+                ghostProbeAt = os.clock()
+                tapLog("Ghost", "Game-Cooldown! Messe Länge...")
             end
         end
     end
