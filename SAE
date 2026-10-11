@@ -1,658 +1,490 @@
--- Lua 5.1 / Roblox Executor (Synapse X / KRNL / Fluxus)
--- Street Life Suite v2 — Car Loot, Tween Movement, Real Godmode, Network Invis, Silent Aim 50-500
+-- Lua 5.1 / Roblox Executor — Street Life Suite v3 FIXED
+-- fixes: removed `continue` (not Lua5.1), removed NetworkClient, fixed Heartbeat/task.wait
 
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
-local UserInputService  = game:GetService("UserInputService")
-local TweenService      = game:GetService("TweenService")
-local Workspace         = game:GetService("Workspace")
-local NetworkClient     = game:GetService("NetworkClient")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local ReplicatedStorage= game:GetService("ReplicatedStorage")
 
 local lp    = Players.LocalPlayer
-local cam   = Workspace.CurrentCamera
+local cam   = workspace.CurrentCamera
 local mouse = lp:GetMouse()
 
--- ── CONFIG ───────────────────────────────────────────────────────────────────
 local cfg = {
-    silent_aim  = false,
-    silent_fov  = 150,      -- px, 50–500 step 50
-    esp         = false,
-    autofarm    = false,
-    invis       = false,
-    godmode     = false,
+    silent_aim = false,
+    silent_fov = 150,
+    esp        = false,
+    autofarm   = false,
+    invis      = false,
+    godmode    = false,
 }
 
--- ── STATE ────────────────────────────────────────────────────────────────────
-local connections   = {}
-local esp_drawings  = {}
-local fov_circle    = nil
+local conns       = {}
+local esp_objs    = {}
+local fov_circle  = nil
+local farm_active = false -- debounce so Heartbeat doesn't stack spawns
 
 -- ── UTILS ────────────────────────────────────────────────────────────────────
-local function get_char()  return lp.Character end
-local function get_root()  local c=get_char() return c and c:FindFirstChild("HumanoidRootPart") end
-local function get_hum()   local c=get_char() return c and c:FindFirstChildOfClass("Humanoid") end
-local function get_head(p) local c=p.Character return c and c:FindFirstChild("Head") end
-local function get_hum_p(p) local c=p.Character return c and c:FindFirstChildOfClass("Humanoid") end
-local function get_root_p(p) local c=p.Character return c and c:FindFirstChild("HumanoidRootPart") end
+local function gchar()    return lp.Character end
+local function groot()    local c=gchar() return c and c:FindFirstChild("HumanoidRootPart") end
+local function ghum()     local c=gchar() return c and c:FindFirstChildOfClass("Humanoid") end
+local function phead(p)   local c=p.Character return c and c:FindFirstChild("Head") end
+local function phum(p)    local c=p.Character return c and c:FindFirstChildOfClass("Humanoid") end
+local function proot(p)   local c=p.Character return c and c:FindFirstChild("HumanoidRootPart") end
 
-local function world_to_vp(pos)
+local function w2v(pos)
     local s, on = cam:WorldToViewportPoint(pos)
     return Vector2.new(s.X, s.Y), on
 end
 
 -- ── SILENT AIM ───────────────────────────────────────────────────────────────
 local function best_target()
-    local cx = cam.ViewportSize.X / 2
-    local cy = cam.ViewportSize.Y / 2
-    local center = Vector2.new(cx, cy)
-    local best_d, best_p = cfg.silent_fov, nil
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= lp then
-            local head = get_head(plr)
-            local hum  = get_hum_p(plr)
-            if head and hum and hum.Health > 0 then
-                local s, on = world_to_vp(head.Position)
+    local center = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+    local bd, bp = cfg.silent_fov, nil
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= lp then
+            local h = phead(p)
+            local hu = phum(p)
+            if h and hu and hu.Health > 0 then
+                local s, on = w2v(h.Position)
                 if on then
                     local d = (s - center).Magnitude
-                    if d < best_d then best_d = d; best_p = plr end
+                    if d < bd then bd=d; bp=p end
                 end
             end
         end
     end
-    return best_p
+    return bp
 end
 
 local mt = getrawmetatable and getrawmetatable(mouse)
-local orig_index
+local orig_idx
 if mt then
     setreadonly(mt, false)
-    orig_index = mt.__index
+    orig_idx = mt.__index
     mt.__index = function(self, key)
-        if cfg.silent_aim and (key == "Hit" or key == "Target") then
+        if cfg.silent_aim and (key=="Hit" or key=="Target") then
             local t = best_target()
             if t then
-                local h = get_head(t)
+                local h = phead(t)
                 if h then
-                    if key == "Hit"    then return CFrame.new(h.Position) end
-                    if key == "Target" then return h end
+                    if key=="Hit"    then return CFrame.new(h.Position) end
+                    if key=="Target" then return h end
                 end
             end
         end
-        return orig_index(self, key)
+        return orig_idx(self, key)
     end
 end
 
 -- ── FOV CIRCLE ───────────────────────────────────────────────────────────────
 if Drawing then
-    fov_circle              = Drawing.new("Circle")
-    fov_circle.Visible      = false
-    fov_circle.Color        = Color3.fromRGB(255, 255, 255)
-    fov_circle.Thickness    = 1.5
-    fov_circle.Radius       = cfg.silent_fov
-    fov_circle.Filled       = false
-    fov_circle.NumSides     = 64
+    fov_circle           = Drawing.new("Circle")
+    fov_circle.Visible   = false
+    fov_circle.Color     = Color3.fromRGB(255,255,255)
+    fov_circle.Thickness = 1.5
+    fov_circle.Radius    = cfg.silent_fov
+    fov_circle.Filled    = false
+    fov_circle.NumSides  = 64
 end
 
-connections["fov"] = RunService.RenderStepped:Connect(function()
-    if fov_circle then
-        fov_circle.Visible  = cfg.silent_aim
-        fov_circle.Radius   = cfg.silent_fov
-        fov_circle.Position = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
-    end
+conns.fov = RunService.RenderStepped:Connect(function()
+    if not fov_circle then return end
+    fov_circle.Visible  = cfg.silent_aim
+    fov_circle.Radius   = cfg.silent_fov
+    fov_circle.Position = Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
 end)
 
 -- ── ESP ──────────────────────────────────────────────────────────────────────
 local function make_esp(plr)
-    if not Drawing or esp_drawings[plr] then return end
-    local box  = Drawing.new("Square")
-    box.Visible = false; box.Color = Color3.fromRGB(255,50,50)
-    box.Thickness = 1.5; box.Filled = false
-    local nm = Drawing.new("Text")
-    nm.Visible = false; nm.Color = Color3.fromRGB(255,255,255)
-    nm.Size = 13; nm.Outline = true; nm.Center = true
-    local hp = Drawing.new("Square")
-    hp.Visible = false; hp.Filled = true
-    esp_drawings[plr] = {box=box, name=nm, hp=hp}
+    if not Drawing or esp_objs[plr] then return end
+    local box = Drawing.new("Square")
+    box.Visible=false; box.Color=Color3.fromRGB(255,50,50); box.Thickness=1.5; box.Filled=false
+    local nm  = Drawing.new("Text")
+    nm.Visible=false; nm.Color=Color3.fromRGB(255,255,255); nm.Size=13; nm.Outline=true; nm.Center=true
+    local hp  = Drawing.new("Square")
+    hp.Visible=false; hp.Filled=true
+    esp_objs[plr] = {box=box,name=nm,hp=hp}
 end
 
 local function rm_esp(plr)
-    local d = esp_drawings[plr]; if not d then return end
+    local d = esp_objs[plr]
+    if not d then return end
     d.box:Remove(); d.name:Remove(); d.hp:Remove()
-    esp_drawings[plr] = nil
+    esp_objs[plr] = nil
 end
 
-connections["esp"] = RunService.RenderStepped:Connect(function()
+conns.esp = RunService.RenderStepped:Connect(function()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= lp then
             make_esp(plr)
-            local d = esp_drawings[plr]; if not d then continue end
-            local hum  = get_hum_p(plr)
-            local root = get_root_p(plr)
-            if not cfg.esp or not root or not hum or hum.Health <= 0 then
-                d.box.Visible=false; d.name.Visible=false; d.hp.Visible=false; continue
+            local d  = esp_objs[plr]
+            local hu = phum(plr)
+            local rt = proot(plr)
+            if not d then
+                -- nothing
+            elseif not cfg.esp or not rt or not hu or hu.Health<=0 then
+                d.box.Visible=false; d.name.Visible=false; d.hp.Visible=false
+            else
+                local ts,ot = w2v(rt.Position+Vector3.new(0,3,0))
+                local bs,ob = w2v(rt.Position-Vector3.new(0,3,0))
+                if not ot and not ob then
+                    d.box.Visible=false; d.name.Visible=false; d.hp.Visible=false
+                else
+                    local hh = math.abs(ts.Y-bs.Y)
+                    local ww = hh*0.5
+                    local xx = ts.X-ww/2
+                    d.box.Position=Vector2.new(xx,ts.Y); d.box.Size=Vector2.new(ww,hh); d.box.Visible=true
+                    d.name.Text=plr.Name; d.name.Position=Vector2.new(ts.X,ts.Y-16); d.name.Visible=true
+                    local fr = hu.Health/hu.MaxHealth
+                    local bh = hh*fr
+                    d.hp.Position=Vector2.new(xx-6,ts.Y+(hh-bh)); d.hp.Size=Vector2.new(3,bh)
+                    d.hp.Color=Color3.fromRGB(math.floor(255*(1-fr)),math.floor(255*fr),0)
+                    d.hp.Visible=true
+                end
             end
-            local ts, on_t = world_to_vp(root.Position + Vector3.new(0,3,0))
-            local bs, on_b = world_to_vp(root.Position - Vector3.new(0,3,0))
-            if not on_t and not on_b then
-                d.box.Visible=false; d.name.Visible=false; d.hp.Visible=false; continue
-            end
-            local h  = math.abs(ts.Y - bs.Y)
-            local w  = h * 0.5
-            local x  = ts.X - w/2
-            d.box.Position = Vector2.new(x, ts.Y)
-            d.box.Size     = Vector2.new(w, h)
-            d.box.Visible  = true
-            d.name.Text     = plr.Name
-            d.name.Position = Vector2.new(ts.X, ts.Y - 16)
-            d.name.Visible  = true
-            local frac = hum.Health / hum.MaxHealth
-            local hh   = h * frac
-            d.hp.Position = Vector2.new(x - 6, ts.Y + (h - hh))
-            d.hp.Size     = Vector2.new(3, hh)
-            d.hp.Color    = Color3.fromRGB(math.floor(255*(1-frac)), math.floor(255*frac), 0)
-            d.hp.Visible  = true
         end
     end
 end)
 
 Players.PlayerRemoving:Connect(rm_esp)
 
--- ── CAR LOOT AUTOFARM ────────────────────────────────────────────────────────
--- spoof: tween root into car seat CFrame so server sees us seated/overlapping
--- then fire the loot remote; never raw-teleport (detected)
-
-local function find_lootable_cars()
-    local cars = {}
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        -- seat / VehicleSeat inside a car model that has a loot prompt or value
-        if obj:IsA("VehicleSeat") or
-           (obj:IsA("Model") and (
-               obj.Name:lower():find("car")   or
-               obj.Name:lower():find("vehicle") or
-               obj.Name:lower():find("auto")
-           )) then
-            table.insert(cars, obj)
-        end
-    end
-    return cars
-end
-
+-- ── CAR LOOT FARM ────────────────────────────────────────────────────────────
 local function find_loot_remote()
-    -- walk ReplicatedStorage for any RemoteEvent/Function whose name hints loot/money/rob
-    local RS = game:GetService("ReplicatedStorage")
-    for _, v in ipairs(RS:GetDescendants()) do
-        if (v:IsA("RemoteEvent") or v:IsA("RemoteFunction")) and (
-            v.Name:lower():find("loot")   or
-            v.Name:lower():find("rob")    or
-            v.Name:lower():find("money")  or
-            v.Name:lower():find("steal")  or
-            v.Name:lower():find("cash")   or
-            v.Name:lower():find("collect")
-        ) then
-            return v
+    for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
+        if (v:IsA("RemoteEvent") or v:IsA("RemoteFunction")) then
+            local n = v.Name:lower()
+            if n:find("loot") or n:find("rob") or n:find("money")
+            or n:find("steal") or n:find("cash") or n:find("collect") then
+                return v
+            end
         end
-    end
-    return nil
-end
-
-local function tween_to(target_cf, duration)
-    local root = get_root(); if not root then return end
-    -- unanchor temporarily so tween moves us
-    local was_anchored = root.Anchored
-    root.Anchored = false
-    local tw = TweenService:Create(root, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
-        CFrame = target_cf
-    })
-    tw:Play()
-    tw.Completed:Wait()
-    root.Anchored = was_anchored
-end
-
-local function spoof_in_car(seat)
-    -- sit into seat via Sit() — server sees us in vehicle
-    local hum = get_hum(); if not hum then return end
-    if seat:IsA("VehicleSeat") or seat:IsA("Seat") then
-        seat:Sit(hum)
-        task.wait(0.3)
     end
 end
 
 local function do_car_loot()
-    local root = get_root(); if not root then return end
-    local remote = find_loot_remote()
-    local cars   = find_lootable_cars()
+    if farm_active then return end
+    farm_active = true
+    local ok, err = pcall(function()
+        local root = groot()
+        if not root then return end
+        local remote = find_loot_remote()
 
-    for _, car in ipairs(cars) do
-        if not cfg.autofarm then break end
-
-        local seat = nil
-        if car:IsA("VehicleSeat") or car:IsA("Seat") then
-            seat = car
-        else
-            seat = car:FindFirstChildOfClass("VehicleSeat")
-                or car:FindFirstChildOfClass("Seat")
-        end
-
-        if seat then
-            -- tween close to car (not teleport — avoids noclip detect)
-            local target = seat.CFrame * CFrame.new(0, 2, 0)
-            tween_to(target, 0.4)
-
-            -- spoof sit
-            spoof_in_car(seat)
-
-            -- fire any prox prompts inside the car
-            for _, pp in ipairs(seat.Parent and seat.Parent:GetDescendants() or {}) do
-                if pp:IsA("ProximityPrompt") then
-                    pcall(function() fireproximityprompt(pp) end)
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if not cfg.autofarm then break end
+            local seat = nil
+            if obj:IsA("VehicleSeat") or obj:IsA("Seat") then
+                seat = obj
+            elseif obj:IsA("Model") then
+                local n = obj.Name:lower()
+                if n:find("car") or n:find("vehicle") or n:find("auto") then
+                    seat = obj:FindFirstChildOfClass("VehicleSeat")
+                       or obj:FindFirstChildOfClass("Seat")
                 end
             end
 
-            -- fire loot remote if found, pass car/seat as arg
-            if remote then
-                if remote:IsA("RemoteEvent") then
-                    pcall(function() remote:FireServer(seat.Parent or seat) end)
-                elseif remote:IsA("RemoteFunction") then
-                    pcall(function() remote:InvokeServer(seat.Parent or seat) end)
+            if seat then
+                -- tween to seat, never raw TP
+                local tw = TweenService:Create(root,
+                    TweenInfo.new(0.4, Enum.EasingStyle.Linear),
+                    {CFrame = seat.CFrame * CFrame.new(0,2,0)})
+                tw:Play(); tw.Completed:Wait()
+
+                -- spoof sit
+                local hu = ghum()
+                if hu and (seat:IsA("VehicleSeat") or seat:IsA("Seat")) then
+                    seat:Sit(hu)
+                    task.wait(0.25)
                 end
-            end
 
-            task.wait(0.6)
-
-            -- unsit
-            local hum = get_hum()
-            if hum then hum.Sit = false end
-        end
-
-        -- fire any money pickups nearby after loot
-        for _, pp in ipairs(Workspace:GetDescendants()) do
-            if pp:IsA("ProximityPrompt") then
-                local part = pp.Parent
-                if part and part:IsA("BasePart") then
-                    local d = (root.Position - part.Position).Magnitude
-                    if d < 30 then
-                        pcall(function() fireproximityprompt(pp) end)
+                -- prox prompts on car
+                local parent = seat.Parent or seat
+                for _, pp in ipairs(parent:GetDescendants()) do
+                    if pp:IsA("ProximityPrompt") then
+                        pcall(fireproximityprompt, pp)
                     end
                 end
+
+                -- loot remote
+                if remote then
+                    if remote:IsA("RemoteEvent") then
+                        pcall(function() remote:FireServer(parent) end)
+                    else
+                        pcall(function() remote:InvokeServer(parent) end)
+                    end
+                end
+
+                task.wait(0.5)
+                local hu2 = ghum()
+                if hu2 then pcall(function() hu2.Sit = false end) end
+
+                -- nearby prox prompts
+                local rt2 = groot()
+                if rt2 then
+                    for _, pp in ipairs(workspace:GetDescendants()) do
+                        if pp:IsA("ProximityPrompt") then
+                            local pt = pp.Parent
+                            if pt and pt:IsA("BasePart") then
+                                if (rt2.Position-pt.Position).Magnitude < 30 then
+                                    pcall(fireproximityprompt, pp)
+                                end
+                            end
+                        end
+                    end
+                end
+                task.wait(0.4)
             end
         end
-
-        task.wait(0.5)
-    end
+    end)
+    if not ok then warn("farm err: "..tostring(err)) end
+    farm_active = false
 end
 
-connections["farm_loop"] = RunService.Heartbeat:Connect(function()
-    if cfg.autofarm then
-        task.spawn(do_car_loot)
-        task.wait(3) -- throttle full cycle to every ~3s
+local farm_timer = 0
+conns.farm = RunService.Heartbeat:Connect(function(dt)
+    if not cfg.autofarm then farm_timer=0; return end
+    farm_timer = farm_timer + dt
+    if farm_timer >= 3 then
+        farm_timer = 0
+        task.spawn(do_car_loot) -- spawn so Heartbeat never yields
     end
 end)
 
--- ── INVIS — network-side ─────────────────────────────────────────────────────
--- sets every part's network owner + destroys render on OTHER clients via
--- LocalTransparencyModifier is client-only, so we use a tool trick:
--- replicate transparency via a RemoteEvent if available, else hide via
--- forcefield flicker + part transparency on server through a tool fire
--- Most reliable executor method: set transparency on server via a known remote
--- or use the "hide from others" seat trick. Here we use both layers.
-
-local invis_conn = nil
-
-local function set_invis_local(state)
-    -- layer 1: hide from own screen
-    local c = get_char(); if not c then return end
-    for _, p in ipairs(c:GetDescendants()) do
-        if p:IsA("BasePart") then
-            p.LocalTransparencyModifier = state and 1 or 0
-        end
-    end
-end
-
-local function set_invis_network(state)
-    -- layer 2: set actual part Transparency so other clients see it
-    -- requires executor with setflag / set property on server-replicated parts
-    -- works on most executors that allow property sets on non-owned parts
-    local c = get_char(); if not c then return end
+-- ── INVIS ────────────────────────────────────────────────────────────────────
+local function apply_invis(state)
+    local c = gchar()
+    if not c then return end
     for _, p in ipairs(c:GetDescendants()) do
         if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+            p.LocalTransparencyModifier = state and 1 or 0
+            pcall(function() p.Transparency = state and 1 or 0 end)
+        end
+        if p:IsA("Decal") or p:IsA("SpecialMesh") then
             pcall(function() p.Transparency = state and 1 or 0 end)
         end
     end
-    -- also hide accessories / hat handles
-    for _, p in ipairs(c:GetDescendants()) do
-        if p:IsA("SpecialMesh") or p:IsA("Decal") then
-            pcall(function() p.Transparency = state and 1 or 0 end)
-        end
-    end
-    -- humanoid display
-    local hum = get_hum()
-    if hum then
+    local hu = ghum()
+    if hu then
         pcall(function()
-            hum.DisplayDistanceType = state
+            hu.DisplayDistanceType = state
                 and Enum.HumanoidDisplayDistanceType.None
                 or  Enum.HumanoidDisplayDistanceType.Viewer
         end)
     end
 end
 
-local function apply_invis(state)
-    set_invis_local(state)
-    set_invis_network(state)
-end
-
-connections["invis_respawn"] = lp.CharacterAdded:Connect(function()
+conns.invis_spawn = lp.CharacterAdded:Connect(function()
     task.wait(1)
-    if cfg.invis then apply_invis(true) end
+    if cfg.invis   then apply_invis(true) end
+    if cfg.godmode then
+        local hu = ghum()
+        if hu then pcall(function() hu.Health = hu.MaxHealth end) end
+    end
 end)
 
--- ── GODMODE — server-replicated ───────────────────────────────────────────────
--- method 1: hook humanoid HealthChanged and reset via remote if available
--- method 2: kill the TakeDamage function on our humanoid
--- method 3: freeze HP via a tight heartbeat write
--- all three stacked
-
-local function hook_godmode()
-    local hum = get_hum(); if not hum then return end
-
-    -- method A: override TakeDamage
-    local old_td = hum.TakeDamage
-    hum.TakeDamage = function(self, amount)
+-- ── GODMODE ──────────────────────────────────────────────────────────────────
+local function hook_gm()
+    local hu = ghum(); if not hu then return end
+    local old_td = hu.TakeDamage
+    hu.TakeDamage = function(self, amt)
         if cfg.godmode then return end
-        return old_td(self, amount)
+        return old_td(self, amt)
     end
-
-    -- method B: HealthChanged → restore
-    connections["gm_health"] = hum.HealthChanged:Connect(function(hp)
-        if cfg.godmode and hp < hum.MaxHealth then
-            hum.Health = hum.MaxHealth
-        end
-    end)
-
-    -- method C: tight heartbeat lock
-    connections["gm_beat"] = RunService.Heartbeat:Connect(function()
-        if not cfg.godmode then return end
-        local h = get_hum()
-        if h and h.Health < h.MaxHealth then
-            pcall(function() h.Health = h.MaxHealth end)
+    conns.gm_hc = hu.HealthChanged:Connect(function(hp)
+        if cfg.godmode and hp < hu.MaxHealth then
+            pcall(function() hu.Health = hu.MaxHealth end)
         end
     end)
 end
 
-hook_godmode()
+hook_gm()
+conns.gm_spawn = lp.CharacterAdded:Connect(function()
+    task.wait(0.5); hook_gm()
+end)
 
-connections["gm_respawn"] = lp.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    hook_godmode()
+local gm_t = 0
+conns.gm_beat = RunService.Heartbeat:Connect(function(dt)
+    if not cfg.godmode then return end
+    gm_t = gm_t + dt
+    if gm_t < 0.1 then return end
+    gm_t = 0
+    local hu = ghum()
+    if hu and hu.Health < hu.MaxHealth then
+        pcall(function() hu.Health = hu.MaxHealth end)
+    end
 end)
 
 -- ── UI ────────────────────────────────────────────────────────────────────────
 local Gui = Instance.new("ScreenGui")
-Gui.Name           = "SLSuite"
-Gui.ResetOnSpawn   = false
-Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-Gui.IgnoreGuiInset = true
+Gui.Name="SLSuite"; Gui.ResetOnSpawn=false
+Gui.ZIndexBehavior=Enum.ZIndexBehavior.Sibling; Gui.IgnoreGuiInset=true
 
 pcall(function()
     if syn and syn.protect_gui then syn.protect_gui(Gui) end
     Gui.Parent = game:GetService("CoreGui")
 end)
-if not Gui.Parent or Gui.Parent ~= game:GetService("CoreGui") then
+if Gui.Parent ~= game:GetService("CoreGui") then
     Gui.Parent = lp:WaitForChild("PlayerGui")
 end
 
--- main frame
 local Frame = Instance.new("Frame", Gui)
-Frame.Size             = UDim2.new(0, 230, 0, 340)
-Frame.Position         = UDim2.new(0, 16, 0, 16)
-Frame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
-Frame.BorderSizePixel  = 0
-Frame.ClipsDescendants = true
-Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 10)
+Frame.Size=UDim2.new(0,230,0,340); Frame.Position=UDim2.new(0,16,0,16)
+Frame.BackgroundColor3=Color3.fromRGB(12,12,18); Frame.BorderSizePixel=0
+Frame.ClipsDescendants=true
+Instance.new("UICorner",Frame).CornerRadius=UDim.new(0,10)
 
--- drop shadow simulation
-local Shadow = Instance.new("Frame", Frame)
-Shadow.Size              = UDim2.new(1, 6, 1, 6)
-Shadow.Position          = UDim2.new(0, -3, 0, -3)
-Shadow.BackgroundColor3  = Color3.fromRGB(0, 0, 0)
-Shadow.BackgroundTransparency = 0.6
-Shadow.BorderSizePixel   = 0
-Shadow.ZIndex            = -1
-Instance.new("UICorner", Shadow).CornerRadius = UDim.new(0, 12)
+local Bar = Instance.new("Frame",Frame)
+Bar.Size=UDim2.new(1,0,0,34); Bar.BackgroundColor3=Color3.fromRGB(25,25,40); Bar.BorderSizePixel=0
+Instance.new("UICorner",Bar).CornerRadius=UDim.new(0,10)
 
--- title bar
-local Bar = Instance.new("Frame", Frame)
-Bar.Size             = UDim2.new(1, 0, 0, 34)
-Bar.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
-Bar.BorderSizePixel  = 0
-Instance.new("UICorner", Bar).CornerRadius = UDim.new(0, 10)
+local TLbl = Instance.new("TextLabel",Bar)
+TLbl.Size=UDim2.new(1,-40,1,0); TLbl.Position=UDim2.new(0,12,0,0)
+TLbl.BackgroundTransparency=1; TLbl.TextColor3=Color3.fromRGB(180,180,255)
+TLbl.Font=Enum.Font.GothamBold; TLbl.TextSize=13
+TLbl.TextXAlignment=Enum.TextXAlignment.Left; TLbl.Text="Street Life Suite"
 
-local TLbl = Instance.new("TextLabel", Bar)
-TLbl.Size                  = UDim2.new(1, -40, 1, 0)
-TLbl.Position              = UDim2.new(0, 12, 0, 0)
-TLbl.BackgroundTransparency= 1
-TLbl.TextColor3            = Color3.fromRGB(180, 180, 255)
-TLbl.Font                  = Enum.Font.GothamBold
-TLbl.TextSize              = 13
-TLbl.TextXAlignment        = Enum.TextXAlignment.Left
-TLbl.Text                  = "Street Life Suite"
+local XBtn = Instance.new("TextButton",Bar)
+XBtn.Size=UDim2.new(0,26,0,26); XBtn.Position=UDim2.new(1,-30,0.5,-13)
+XBtn.BackgroundColor3=Color3.fromRGB(180,40,40); XBtn.TextColor3=Color3.fromRGB(255,255,255)
+XBtn.Font=Enum.Font.GothamBold; XBtn.TextSize=14; XBtn.Text="✕"; XBtn.BorderSizePixel=0
+Instance.new("UICorner",XBtn).CornerRadius=UDim.new(0,6)
 
-local XBtn = Instance.new("TextButton", Bar)
-XBtn.Size               = UDim2.new(0, 26, 0, 26)
-XBtn.Position           = UDim2.new(1, -30, 0.5, -13)
-XBtn.BackgroundColor3   = Color3.fromRGB(180, 40, 40)
-XBtn.TextColor3         = Color3.fromRGB(255, 255, 255)
-XBtn.Font               = Enum.Font.GothamBold
-XBtn.TextSize           = 14
-XBtn.Text               = "✕"
-XBtn.BorderSizePixel    = 0
-Instance.new("UICorner", XBtn).CornerRadius = UDim.new(0, 6)
-
--- drag
-local drag_active, drag_origin, frame_origin
+local da,dor,dof
 Bar.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 then
-        drag_active  = true
-        drag_origin  = i.Position
-        frame_origin = Frame.Position
-    end
+    if i.UserInputType==Enum.UserInputType.MouseButton1 then
+        da=true; dor=i.Position; dof=Frame.Position end
 end)
 UserInputService.InputChanged:Connect(function(i)
-    if drag_active and i.UserInputType == Enum.UserInputType.MouseMovement then
-        local d = i.Position - drag_origin
-        Frame.Position = UDim2.new(
-            frame_origin.X.Scale, frame_origin.X.Offset + d.X,
-            frame_origin.Y.Scale, frame_origin.Y.Offset + d.Y)
+    if da and i.UserInputType==Enum.UserInputType.MouseMovement then
+        local d=i.Position-dor
+        Frame.Position=UDim2.new(dof.X.Scale,dof.X.Offset+d.X,dof.Y.Scale,dof.Y.Offset+d.Y)
     end
 end)
 UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 then drag_active = false end
+    if i.UserInputType==Enum.UserInputType.MouseButton1 then da=false end
 end)
 
--- scroll body
-local Scroll = Instance.new("ScrollingFrame", Frame)
-Scroll.Size                   = UDim2.new(1, 0, 1, -34)
-Scroll.Position               = UDim2.new(0, 0, 0, 34)
-Scroll.BackgroundTransparency = 1
-Scroll.BorderSizePixel        = 0
-Scroll.ScrollBarThickness     = 3
-Scroll.ScrollBarImageColor3   = Color3.fromRGB(80, 80, 130)
-Scroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
-Scroll.CanvasSize             = UDim2.new(0,0,0,0)
+local Scroll = Instance.new("ScrollingFrame",Frame)
+Scroll.Size=UDim2.new(1,0,1,-34); Scroll.Position=UDim2.new(0,0,0,34)
+Scroll.BackgroundTransparency=1; Scroll.BorderSizePixel=0
+Scroll.ScrollBarThickness=3; Scroll.ScrollBarImageColor3=Color3.fromRGB(80,80,130)
+Scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y; Scroll.CanvasSize=UDim2.new(0,0,0,0)
+local LL=Instance.new("UIListLayout",Scroll)
+LL.Padding=UDim.new(0,5); LL.SortOrder=Enum.SortOrder.LayoutOrder
+local PP=Instance.new("UIPadding",Scroll)
+PP.PaddingLeft=UDim.new(0,8); PP.PaddingRight=UDim.new(0,8); PP.PaddingTop=UDim.new(0,8)
 
-local List = Instance.new("UIListLayout", Scroll)
-List.Padding   = UDim.new(0, 5)
-List.SortOrder = Enum.SortOrder.LayoutOrder
-local Pad = Instance.new("UIPadding", Scroll)
-Pad.PaddingLeft  = UDim.new(0, 8)
-Pad.PaddingRight = UDim.new(0, 8)
-Pad.PaddingTop   = UDim.new(0, 8)
+local order=0
+local CON=Color3.fromRGB(60,210,100)
+local COFF=Color3.fromRGB(55,55,75)
 
-local row_order = 0
-local function next_order() row_order = row_order + 1; return row_order end
-
-local CON  = Color3.fromRGB(60, 210, 100)
-local COFF = Color3.fromRGB(55, 55, 75)
-
--- toggle factory
-local function make_toggle(label, key, cb)
-    local R = Instance.new("Frame", Scroll)
-    R.Size             = UDim2.new(1, 0, 0, 38)
-    R.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-    R.BorderSizePixel  = 0
-    R.LayoutOrder      = next_order()
-    Instance.new("UICorner", R).CornerRadius = UDim.new(0, 7)
-
-    local L = Instance.new("TextLabel", R)
-    L.Size                   = UDim2.new(1, -58, 1, 0)
-    L.Position               = UDim2.new(0, 12, 0, 0)
-    L.BackgroundTransparency = 1
-    L.TextColor3             = Color3.fromRGB(200, 200, 215)
-    L.Font                   = Enum.Font.Gotham
-    L.TextSize               = 12
-    L.TextXAlignment         = Enum.TextXAlignment.Left
-    L.Text                   = label
-
-    local K = Instance.new("Frame", R)
-    K.Size             = UDim2.new(0, 42, 0, 22)
-    K.Position         = UDim2.new(1, -50, 0.5, -11)
-    K.BackgroundColor3 = cfg[key] and CON or COFF
-    K.BorderSizePixel  = 0
-    Instance.new("UICorner", K).CornerRadius = UDim.new(0, 11)
-
-    local P = Instance.new("Frame", K)
-    P.Size             = UDim2.new(0, 18, 0, 18)
-    P.Position         = cfg[key] and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)
-    P.BackgroundColor3 = Color3.fromRGB(255,255,255)
-    P.BorderSizePixel  = 0
-    Instance.new("UICorner", P).CornerRadius = UDim.new(0, 9)
-
-    local function refresh()
-        local on = cfg[key]
-        TweenService:Create(K, TweenInfo.new(0.12), {BackgroundColor3 = on and CON or COFF}):Play()
-        TweenService:Create(P, TweenInfo.new(0.12), {
-            Position = on and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)
-        }):Play()
+local function make_toggle(lbl, key, cb)
+    order=order+1
+    local R=Instance.new("Frame",Scroll)
+    R.Size=UDim2.new(1,0,0,38); R.BackgroundColor3=Color3.fromRGB(20,20,30)
+    R.BorderSizePixel=0; R.LayoutOrder=order
+    Instance.new("UICorner",R).CornerRadius=UDim.new(0,7)
+    local L=Instance.new("TextLabel",R)
+    L.Size=UDim2.new(1,-58,1,0); L.Position=UDim2.new(0,12,0,0)
+    L.BackgroundTransparency=1; L.TextColor3=Color3.fromRGB(200,200,215)
+    L.Font=Enum.Font.Gotham; L.TextSize=12
+    L.TextXAlignment=Enum.TextXAlignment.Left; L.Text=lbl
+    local K=Instance.new("Frame",R)
+    K.Size=UDim2.new(0,42,0,22); K.Position=UDim2.new(1,-50,0.5,-11)
+    K.BackgroundColor3=cfg[key] and CON or COFF; K.BorderSizePixel=0
+    Instance.new("UICorner",K).CornerRadius=UDim.new(0,11)
+    local P=Instance.new("Frame",K)
+    P.Size=UDim2.new(0,18,0,18)
+    P.Position=cfg[key] and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)
+    P.BackgroundColor3=Color3.fromRGB(255,255,255); P.BorderSizePixel=0
+    Instance.new("UICorner",P).CornerRadius=UDim.new(0,9)
+    local function ref()
+        local on=cfg[key]
+        TweenService:Create(K,TweenInfo.new(0.12),{BackgroundColor3=on and CON or COFF}):Play()
+        TweenService:Create(P,TweenInfo.new(0.12),{
+            Position=on and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)}):Play()
     end
-
     R.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then
-            cfg[key] = not cfg[key]
-            refresh()
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then
+            cfg[key]=not cfg[key]; ref()
             if cb then cb(cfg[key]) end
         end
     end)
 end
 
--- FOV slider — step 50, range 50–500
 local function make_fov_slider()
-    local R = Instance.new("Frame", Scroll)
-    R.Size             = UDim2.new(1, 0, 0, 58)
-    R.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-    R.BorderSizePixel  = 0
-    R.LayoutOrder      = next_order()
-    Instance.new("UICorner", R).CornerRadius = UDim.new(0, 7)
-
-    local title = Instance.new("TextLabel", R)
-    title.Size                   = UDim2.new(1, 0, 0, 20)
-    title.Position               = UDim2.new(0, 12, 0, 4)
-    title.BackgroundTransparency = 1
-    title.TextColor3             = Color3.fromRGB(200, 200, 215)
-    title.Font                   = Enum.Font.Gotham
-    title.TextSize               = 12
-    title.TextXAlignment         = Enum.TextXAlignment.Left
-    title.Text                   = "Silent Aim FOV: " .. cfg.silent_fov .. "px"
-
-    -- minus button
-    local Minus = Instance.new("TextButton", R)
-    Minus.Size             = UDim2.new(0, 26, 0, 22)
-    Minus.Position         = UDim2.new(0, 12, 0, 28)
-    Minus.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    Minus.TextColor3       = Color3.fromRGB(220,220,220)
-    Minus.Font             = Enum.Font.GothamBold
-    Minus.TextSize         = 14
-    Minus.Text             = "−"
-    Minus.BorderSizePixel  = 0
-    Instance.new("UICorner", Minus).CornerRadius = UDim.new(0, 5)
-
-    -- slider track
-    local Track = Instance.new("Frame", R)
-    Track.Size             = UDim2.new(1, -82, 0, 8)
-    Track.Position         = UDim2.new(0, 44, 0, 35)
-    Track.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    Track.BorderSizePixel  = 0
-    Instance.new("UICorner", Track).CornerRadius = UDim.new(0, 4)
-
-    local Fill = Instance.new("Frame", Track)
-    Fill.Size             = UDim2.new((cfg.silent_fov - 50) / 450, 0, 1, 0)
-    Fill.BackgroundColor3 = Color3.fromRGB(100, 140, 255)
-    Fill.BorderSizePixel  = 0
-    Instance.new("UICorner", Fill).CornerRadius = UDim.new(0, 4)
-
-    -- plus button
-    local Plus = Instance.new("TextButton", R)
-    Plus.Size             = UDim2.new(0, 26, 0, 22)
-    Plus.Position         = UDim2.new(1, -38, 0, 28)
-    Plus.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    Plus.TextColor3       = Color3.fromRGB(220,220,220)
-    Plus.Font             = Enum.Font.GothamBold
-    Plus.TextSize         = 14
-    Plus.Text             = "+"
-    Plus.BorderSizePixel  = 0
-    Instance.new("UICorner", Plus).CornerRadius = UDim.new(0, 5)
-
-    local function set_fov(v)
-        cfg.silent_fov = math.clamp(math.floor(v / 50 + 0.5) * 50, 50, 500)
-        title.Text = "Silent Aim FOV: " .. cfg.silent_fov .. "px"
-        Fill.Size  = UDim2.new((cfg.silent_fov - 50) / 450, 0, 1, 0)
+    order=order+1
+    local R=Instance.new("Frame",Scroll)
+    R.Size=UDim2.new(1,0,0,58); R.BackgroundColor3=Color3.fromRGB(20,20,30)
+    R.BorderSizePixel=0; R.LayoutOrder=order
+    Instance.new("UICorner",R).CornerRadius=UDim.new(0,7)
+    local TT=Instance.new("TextLabel",R)
+    TT.Size=UDim2.new(1,0,0,20); TT.Position=UDim2.new(0,12,0,4)
+    TT.BackgroundTransparency=1; TT.TextColor3=Color3.fromRGB(200,200,215)
+    TT.Font=Enum.Font.Gotham; TT.TextSize=12
+    TT.TextXAlignment=Enum.TextXAlignment.Left
+    TT.Text="Silent Aim FOV: "..cfg.silent_fov.."px"
+    local Minus=Instance.new("TextButton",R)
+    Minus.Size=UDim2.new(0,26,0,22); Minus.Position=UDim2.new(0,12,0,28)
+    Minus.BackgroundColor3=Color3.fromRGB(40,40,60); Minus.TextColor3=Color3.fromRGB(220,220,220)
+    Minus.Font=Enum.Font.GothamBold; Minus.TextSize=14; Minus.Text="−"; Minus.BorderSizePixel=0
+    Instance.new("UICorner",Minus).CornerRadius=UDim.new(0,5)
+    local Track=Instance.new("Frame",R)
+    Track.Size=UDim2.new(1,-82,0,8); Track.Position=UDim2.new(0,44,0,35)
+    Track.BackgroundColor3=Color3.fromRGB(40,40,60); Track.BorderSizePixel=0
+    Instance.new("UICorner",Track).CornerRadius=UDim.new(0,4)
+    local Fill=Instance.new("Frame",Track)
+    Fill.Size=UDim2.new((cfg.silent_fov-50)/450,0,1,0)
+    Fill.BackgroundColor3=Color3.fromRGB(100,140,255); Fill.BorderSizePixel=0
+    Instance.new("UICorner",Fill).CornerRadius=UDim.new(0,4)
+    local Plus=Instance.new("TextButton",R)
+    Plus.Size=UDim2.new(0,26,0,22); Plus.Position=UDim2.new(1,-38,0,28)
+    Plus.BackgroundColor3=Color3.fromRGB(40,40,60); Plus.TextColor3=Color3.fromRGB(220,220,220)
+    Plus.Font=Enum.Font.GothamBold; Plus.TextSize=14; Plus.Text="+"; Plus.BorderSizePixel=0
+    Instance.new("UICorner",Plus).CornerRadius=UDim.new(0,5)
+    local function sf(v)
+        cfg.silent_fov=math.clamp(math.floor(v/50+0.5)*50,50,500)
+        TT.Text="Silent Aim FOV: "..cfg.silent_fov.."px"
+        Fill.Size=UDim2.new((cfg.silent_fov-50)/450,0,1,0)
     end
-
-    Minus.MouseButton1Click:Connect(function() set_fov(cfg.silent_fov - 50) end)
-    Plus.MouseButton1Click:Connect(function()  set_fov(cfg.silent_fov + 50) end)
-
-    -- drag on track
-    local sl_drag = false
+    Minus.MouseButton1Click:Connect(function() sf(cfg.silent_fov-50) end)
+    Plus.MouseButton1Click:Connect(function()  sf(cfg.silent_fov+50) end)
+    local sd=false
     Track.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then sl_drag = true end
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then sd=true end
     end)
     UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 then sl_drag = false end
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then sd=false end
     end)
     UserInputService.InputChanged:Connect(function(i)
-        if sl_drag and i.UserInputType == Enum.UserInputType.MouseMovement then
-            local rel = math.clamp(
-                (i.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
-            set_fov(50 + rel * 450)
+        if sd and i.UserInputType==Enum.UserInputType.MouseMovement then
+            local rel=math.clamp((i.Position.X-Track.AbsolutePosition.X)/Track.AbsoluteSize.X,0,1)
+            sf(50+rel*450)
         end
     end)
 end
 
--- wire toggles
-make_toggle("Silent Aim",        "silent_aim", nil)
-make_toggle("Player ESP",        "esp",        nil)
-make_toggle("Auto Farm (Cars)",  "autofarm",   nil)
-make_toggle("Unsichtbar",        "invis",      function(on) apply_invis(on) end)
-make_toggle("Godmode",           "godmode",    nil)
+make_toggle("Silent Aim",       "silent_aim", nil)
+make_toggle("Player ESP",       "esp",        nil)
+make_toggle("Auto Farm (Cars)", "autofarm",   nil)
+make_toggle("Unsichtbar",       "invis",      function(on) apply_invis(on) end)
+make_toggle("Godmode",          "godmode",    nil)
 make_fov_slider()
 
 -- ── KILL ─────────────────────────────────────────────────────────────────────
 local function kill()
-    for k, c in pairs(connections) do
-        if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
-        connections[k] = nil
+    for k,c in pairs(conns) do
+        if typeof(c)=="RBXScriptConnection" then c:Disconnect() end
+        conns[k]=nil
     end
-    if mt and orig_index then
-        mt.__index = orig_index
-        pcall(function() setreadonly(mt, true) end)
+    if mt and orig_idx then
+        mt.__index=orig_idx
+        pcall(function() setreadonly(mt,true) end)
     end
-    for plr in pairs(esp_drawings) do rm_esp(plr) end
-    if fov_circle then fov_circle:Remove(); fov_circle = nil end
+    for p in pairs(esp_objs) do rm_esp(p) end
+    if fov_circle then fov_circle:Remove(); fov_circle=nil end
     apply_invis(false)
-    -- restore TakeDamage
-    local hum = get_hum()
-    if hum then
-        local h2 = get_hum()
-        if h2 then pcall(function() h2.Health = h2.MaxHealth end) end
-    end
     Gui:Destroy()
 end
 
