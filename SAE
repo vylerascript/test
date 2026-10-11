@@ -2573,6 +2573,8 @@ local function ghostSeated(seat, hum)
         if m0 ~= nil and m1 ~= nil and (m1 - m0) > 0 then
             ghostFails = 0
             ghostSkips = 0
+            ghostPauseUntil = os.clock() + 30
+            tapLog("Ghost", "Geld! 30s Pause")
             pcall(function() ghostPaid[pr] = os.clock() end)
         else
             ghostFails = ghostFails + 1
