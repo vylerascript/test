@@ -2306,8 +2306,20 @@ local function ghostSeated(seat, hum)
         local dt = os.clock() - (ghostLastTP or 0)
         if dt < 12 then task.wait(12 - dt) end
     end
+    -- Landeplatz VORHER prüfen (Fallback nie blind!)
+    local land = nil
+    pcall(function() land = ghostLanding(pos, { lp.Character, m }) end)
+    local landOk = false
     pcall(function()
-        m:PivotTo(CFrame.new(ghostLanding(pos, { lp.Character, m })))
+        if land then landOk = spotClear(m, land) end
+    end)
+    if not landOk then
+        ghostDone[pr] = os.clock()
+        tapLog("Ghost", "kein Landeplatz, weiter")
+        return
+    end
+    pcall(function()
+        m:PivotTo(CFrame.new(land))
         -- sofort verankern: kein Wegrollen bei Aufprall (Restore bei AUS/X)
         for _, d in ipairs(m:GetDescendants()) do
             if d:IsA("BasePart") and not d.Anchored then
@@ -2325,10 +2337,16 @@ local function ghostSeated(seat, hum)
         if (cf.Position - pos).Magnitude <= 20 then there = true end
     end)
     if not there then
-        pcall(function()
-            m:PivotTo(CFrame.new(ghostLanding(pos, { lp.Character, m })))
-        end)
-        task.wait(0.7)
+        local land2 = nil
+        pcall(function() land2 = ghostLanding(pos, { lp.Character, m }) end)
+        local ok2 = false
+        pcall(function() if land2 then ok2 = spotClear(m, land2) end end)
+        if ok2 then
+            pcall(function()
+                m:PivotTo(CFrame.new(land2))
+            end)
+            task.wait(0.7)
+        end
         pcall(function()
             local cf = m:GetBoundingBox()
             if (cf.Position - pos).Magnitude <= 20 then there = true end
