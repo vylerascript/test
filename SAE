@@ -2052,6 +2052,7 @@ end
 local ghostLastTP = 0
 local ghostIdx = 0
 local ghostDone = {}
+local ghostPaid = {}
 local ghostSpots = {}
 local ghostTick = 0
 local ghostFails = 0
@@ -2131,18 +2132,15 @@ local function ghostSeated(seat, hum)
         local okc = pcall(function() return c.Parent ~= nil end)
         if okc then
             local t = ghostDone[c] or 0
-            if os.clock() - t > 300 then table.insert(candList, c) end
+            local tp = ghostPaid[c] or 0
+            if os.clock() - t > 300 and os.clock() - tp > 900 then table.insert(candList, c) end
         end
     end
     if #candList == 0 then
-        local oldest, oldestT = nil, 1e18
-        for _, c in ipairs(ghostSpots) do
-            local t = ghostDone[c] or 0
-            if t < oldestT then oldest, oldestT = c, t end
-        end
-        if oldest then candList = { oldest } end
+        tapLog("Ghost", "alle Autos CD/bezahlt, warte")
+        task.wait(10)
+        return
     end
-    if #candList == 0 then task.wait(1) return end
     -- NAECHSTER Spot (kein Round-Robin quer über Map)
     local pr, bestD = nil, 1e9
     do
@@ -2261,6 +2259,7 @@ local function ghostSeated(seat, hum)
         local m1 = ghostMoney()
         if m0 ~= nil and m1 ~= nil and (m1 - m0) > 0 then
             ghostFails = 0
+            pcall(function() ghostPaid[pr] = os.clock() end)
         else
             ghostFails = ghostFails + 1
             if ghostFails >= 2 then
