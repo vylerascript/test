@@ -1092,6 +1092,18 @@ task.spawn(function()
                             aimP = aimP + lead
                         end
                     end)
+                    -- Enger Kegel: nur umlenken wenn Blick nah dran (Server lehnt Weite ab)
+                    local okAng = false
+                    pcall(function()
+                        local camNow = Workspace.CurrentCamera
+                        if camNow and params.Origin then
+                            local look = camNow.CFrame.LookVector
+                            local dir = (aimP - params.Origin).Unit
+                            local dot = math.clamp(look.X * dir.X + look.Y * dir.Y + look.Z * dir.Z, -1, 1)
+                            if math.deg(math.acos(dot)) <= 15 then okAng = true end
+                        end
+                    end)
+                    if not okAng then return end
                     params.Direction = (aimP - params.Origin).Unit
                     local plr = head.Parent and game:GetService("Players"):GetPlayerFromCharacter(head.Parent)
                     if plr then shared.locked = plr end
