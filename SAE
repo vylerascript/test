@@ -983,7 +983,7 @@ local function silentTarget()
         if not on then return false end
         return true, (Vector2.new(v.X, v.Y) - mp).Magnitude
     end
-    -- Blick-Lock: Nächster an Bildmitte; Hysterese gegen Flackern
+    -- Blick-Lock: Nächster an Bildmitte; Wechsel nur bei klarem Sieger (35px)
     local best, bestD, bestP = nil, S.aimFOV, nil
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= lp then
@@ -993,13 +993,12 @@ local function silentTarget()
         end
     end
     if best then
-        -- Hysterese: altes Ziel bleibt wenn fast genauso gut (kein Flackern)
         pcall(function()
             local lp2 = shared.locked
             if lp2 and lp2 ~= bestP then
                 local tp2 = targetHead(lp2)
                 local ok2, d2 = okHead(lp2, tp2)
-                if ok2 and d2 < S.aimFOV and d2 < bestD * 1.3 + 12 then
+                if ok2 and d2 < S.aimFOV and d2 <= bestD + 35 then
                     best, bestD, bestP = tp2, d2, lp2
                 end
             end
@@ -1056,9 +1055,24 @@ task.spawn(function()
                     pcall(function()
                         local ch = head.Parent
                         local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+                        local hum = ch and ch:FindFirstChildOfClass("Humanoid")
                         if hrp then
                             local dist = (aimP - params.Origin).Magnitude
-                            local lead = hrp.Velocity * math.clamp(dist / 900, 0, 0.5)
+                            -- Laufrichtung statt Ruckel-Velocity + halber Ping
+                            local vel = hrp.Velocity
+                            if hum then
+                                pcall(function()
+                                    local md = hum.MoveDirection
+                                    if md.Magnitude > 0.1 then
+                                        vel = md * hum.WalkSpeed
+                                    else
+                                        vel = Vector3.zero
+                                    end
+                                end)
+                            end
+                            local ping = 0
+                            pcall(function() ping = lp:GetNetworkPing() or 0 end)
+                            local lead = vel * (math.clamp(dist / 900, 0, 0.5) + ping / 2)
                             if lead.Magnitude > 15 then lead = lead.Unit * 15 end
                             aimP = aimP + lead
                         end
