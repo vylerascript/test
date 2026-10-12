@@ -1176,11 +1176,14 @@ pcall(function()
     fovHud = Instance.new("Frame")
     fovHud.Name = "LockMark"
     fovHud.AnchorPoint = Vector2.new(0.5, 0.5)
-    fovHud.Size = UDim2.new(0, 26, 0, 26)
-    fovHud.Rotation = 45
+    fovHud.Size = UDim2.new(0, 18, 0, 18)
+    fovHud.Rotation = 0
     fovHud.BackgroundTransparency = 1
     fovHud.BorderSizePixel = 0
     fovHud.Visible = false
+    local hsc = Instance.new("UICorner")
+    hsc.CornerRadius = UDim.new(1, 0)
+    hsc.Parent = fovHud
     local hs = Instance.new("UIStroke")
     hs.Thickness = 2
     hs.Color = ACC
