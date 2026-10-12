@@ -1410,9 +1410,9 @@ local function silentCacheTick()
     else
         shared.silentCache = nil
     end
-    -- Kamera-Microassist (nur beim Halten): Blick ans Ziel heran, damit
+    -- Kamera-Microassist (Halten ODER Always On): Blick ans Ziel heran, damit
     -- der Server den Treffer anerkennt (Blick vs. Treffer-Check)
-    if S.silent and (S.bindHeld or S.touchHold) and shared.silentCache then
+    if S.silent and (S.bindHeld or S.touchHold or S.immer) and shared.silentCache then
         pcall(function()
             local camNow = Workspace.CurrentCamera
             local h = shared.silentCache
