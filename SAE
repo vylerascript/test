@@ -2609,10 +2609,12 @@ local function ghostSeated(seat, hum)
     end
     local m0 = ghostMoney()
     tapLog("Ghost", "arbeite...")
+    local facePart = nil
     pcall(function()
         local hrp = myHRP()
         if hrp then
             local best, bestD = nil, 18
+            local bestAny, bestAnyD = nil, 18
             for _, d in ipairs(ghostGlass) do
                 local ok = false
                 local dd = 1e9
@@ -2622,9 +2624,28 @@ local function ghostSeated(seat, hum)
                         ok = true
                     end
                 end)
-                if ok and dd < bestD then best, bestD = d, dd end
+                if ok and dd < 18 then
+                    if dd < bestAnyD then bestAny, bestAnyD = d, dd end
+                    local car = false
+                    pcall(function()
+                        local p = d.Parent
+                        local dep = 0
+                        while p and p ~= workspace and dep < 5 do
+                            local mn = string.lower(p.Name)
+                            if string.find(mn, "car", 1, true) or string.find(mn, "rob", 1, true) or string.find(mn, "vehicle", 1, true) or string.find(mn, "auto", 1, true) then
+                                car = true
+                                break
+                            end
+                            if not p:IsA("Model") and not p:IsA("Folder") then break end
+                            p = p.Parent
+                            dep = dep + 1
+                        end
+                    end)
+                    if car and dd < bestD then best, bestD = d, dd end
+                end
             end
-            if best then hrp.CFrame = CFrame.new(hrp.Position, best.Position) end
+            facePart = best or bestAny
+            if facePart then hrp.CFrame = CFrame.new(hrp.Position, facePart.Position) end
         end
     end)
     local fist = equipFist()
@@ -2651,6 +2672,20 @@ local function ghostSeated(seat, hum)
         end
         task.wait(0.45)
     end
+    -- Glas wirklich kaputt? Sonst melden (falsches Ziel / zu weit)
+    pcall(function()
+        if facePart then
+            local gone = facePart.Parent == nil
+            if not gone then
+                pcall(function()
+                    if facePart.Transparency >= 0.9 then gone = true end
+                end)
+            end
+            if not gone then tapLog("Ghost", "Glas heil!") end
+        else
+            tapLog("Ghost", "kein Glas!")
+        end
+    end)
     pcall(function()
         if fireproximityprompt then
             local hrp = myHRP()
