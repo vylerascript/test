@@ -1006,8 +1006,22 @@ local function silentTarget()
     end
     if bestP then
         shared.locked = bestP
+        shared.lockT = os.clock()
     else
-        shared.locked = nil
+        -- Gnadenfrist 0.35s: letztes Ziel halten (kurz hinter Wand/am Rand)
+        local keep = false
+        pcall(function()
+            local lp2 = shared.locked
+            if lp2 and shared.lockT and (os.clock() - shared.lockT) < 0.35 then
+                local tp2 = targetHead(lp2)
+                if tp2 then
+                    local camNow = Workspace.CurrentCamera
+                    local v, on = camNow:WorldToViewportPoint(tp2.Position)
+                    if on then keep = true best = tp2 end
+                end
+            end
+        end)
+        if not keep then shared.locked = nil end
     end
     return best
 end
