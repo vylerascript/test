@@ -1593,9 +1593,24 @@ task.spawn(function()
                                         sub = " * " .. tool
                                     end
                                     if far then
-                                        nl.Text = p.DisplayName .. " " .. math.floor(dist) .. "m" .. sub
+                                        local nc
+                                        if shared.locked == p then
+                                            nc = armed and Color3.fromRGB(255, 180, 60) or S.nameColor
+                                        elseif blocked then
+                                            nc = WALL_RED
+                                        else
+                                            nc = armed and Color3.fromRGB(255, 180, 60) or S.nameColor
+                                        end
+                                        local function hx(c)
+                                            return string.format("#%02X%02X%02X", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+                                        end
+                                        local nm = tostring(p.DisplayName):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+                                        if shared.locked == p then nm = "&gt; " .. nm end
+                                        nl.RichText = true
+                                        nl.Text = '<font color="' .. hx(nc) .. '">' .. nm .. '</font> <font color="' .. hx(S.espColor) .. '">' .. math.floor(dist) .. 'm' .. sub .. '</font>'
                                         nl.Size = UDim2.new(1, 0, 1, 0)
                                     else
+                                        nl.RichText = false
                                         nl.Text = p.DisplayName
                                         nl.Size = UDim2.new(1, 0, 0.58, 0)
                                     end
@@ -1622,7 +1637,7 @@ task.spawn(function()
                                     sl.TextColor3 = S.espColor
                                 end
                                 if shared.locked == p then
-                                    if nl then nl.Text = "> " .. p.DisplayName end
+                                    if nl and not far then nl.Text = "> " .. p.DisplayName end
                                 end
                             end
                             else
