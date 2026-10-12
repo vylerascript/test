@@ -1477,7 +1477,7 @@ task.spawn(function()
             local total = #Players:GetPlayers() - 1
             if total < 0 then total = 0 end
             local tapInfo = ""
-            if os.clock() - S.tapT < 8 and string.find(tostring(S.tapMsg), "Cooldown", 1, true) then tapInfo = " [TAP Ghost=" .. tostring(S.tapMsg):gsub("^Ghost=", "") .. "]" end
+            if os.clock() - S.tapT < 8 and string.find(tostring(S.tapMsg), "Cooldown", 1, true) then tapInfo = " " .. tostring(S.tapMsg):gsub("^Ghost=", "") end
             if tickN % 4 == 0 then
                 warn("[SLR] loop ok #" .. tickN .. " esp=" .. tostring(S.esp) .. " silent=" .. tostring(S.silent) .. " SH=" .. tostring(shared.silentCalls or 0))
             end
