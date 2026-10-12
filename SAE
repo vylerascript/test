@@ -1563,13 +1563,24 @@ task.spawn(function()
                             local bg = b:FindFirstChild("BG")
                             if bg then
                                 local far = dist > 150
-                                local w = far and math.clamp(90 - dist * 0.03, 45, 75) or math.clamp(110 - dist * 0.07, 55, 95)
+                                local w = far and math.clamp(130 - dist * 0.08, 80, 120) or math.clamp(110 - dist * 0.07, 55, 95)
                                 b.Size = far and UDim2.new(0, math.floor(w), 0, math.floor(w * 0.2)) or UDim2.new(0, math.floor(w), 0, math.floor(w * 0.28))
                                 local nl = bg:FindFirstChild("Name")
                                 local sl = bg:FindFirstChild("Sub")
                                 if nl then
-                                    nl.Text = p.DisplayName
-                                    nl.Size = far and UDim2.new(1, 0, 1, 0) or UDim2.new(1, 0, 0.58, 0)
+                                    local sub = ""
+                                    if tool and not armed and not isCivilian(tool) then
+                                        sub = " * ?" .. tool
+                                    elseif tool and armed then
+                                        sub = " * " .. tool
+                                    end
+                                    if far then
+                                        nl.Text = p.DisplayName .. " " .. math.floor(dist) .. "m" .. sub
+                                        nl.Size = UDim2.new(1, 0, 1, 0)
+                                    else
+                                        nl.Text = p.DisplayName
+                                        nl.Size = UDim2.new(1, 0, 0.58, 0)
+                                    end
                                     if shared.locked == p then
                                         nl.TextColor3 = armed and Color3.fromRGB(255, 180, 60) or S.nameColor
                                     elseif blocked then
