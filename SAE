@@ -1087,8 +1087,8 @@ task.spawn(function()
                             end
                             local ping = 0
                             pcall(function() ping = lp:GetNetworkPing() or 0 end)
-                            local lead = vel * (math.clamp(dist / 900, 0, 0.5) + ping / 2)
-                            if lead.Magnitude > 15 then lead = lead.Unit * 15 end
+                            local lead = vel * (math.clamp(dist / 900, 0, 0.6) + ping / 2)
+                            if lead.Magnitude > 25 then lead = lead.Unit * 25 end
                             aimP = aimP + lead
                         end
                     end)
