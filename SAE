@@ -2791,7 +2791,7 @@ local function ghostSeated(seat, hum)
         local function paid()
             ghostFails = 0
             ghostSkips = 0
-            ghostPauseUntil = os.clock() + 50
+            ghostPauseUntil = os.clock() + 55
             tapLog("Ghost", "Cooldown = 50sec")
             pcall(function() ghostDone[pr] = os.clock() + 900 end)
         end
@@ -2806,7 +2806,7 @@ local function ghostSeated(seat, hum)
             else
                 ghostFails = ghostFails + 1
                 if ghostFails >= 2 then
-                    ghostPauseUntil = os.clock() + 50
+                    ghostPauseUntil = os.clock() + 55
                     tapLog("Ghost", "Cooldown = 50sec")
                 end
             end
