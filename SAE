@@ -1092,20 +1092,16 @@ task.spawn(function()
                             aimP = aimP + lead
                         end
                     end)
-                    -- Enger Kegel AB KAMERA (kein Mündungs-Parallax): nur umlenken wenn Blick nah dran
-                    local okAng = false
+                    -- Winkel merken (Diagnose im Status)
                     pcall(function()
                         local camNow = Workspace.CurrentCamera
                         if camNow then
                             local look = camNow.CFrame.LookVector
                             local dir = (aimP - camNow.CFrame.Position).Unit
                             local dot = math.clamp(look.X * dir.X + look.Y * dir.Y + look.Z * dir.Z, -1, 1)
-                            if math.deg(math.acos(dot)) <= 20 then okAng = true end
-                        else
-                            okAng = true
+                            shared.silentAng = math.floor(math.deg(math.acos(dot)))
                         end
                     end)
-                    if not okAng then return end
                     params.Direction = (aimP - params.Origin).Unit
                     local plr = head.Parent and game:GetService("Players"):GetPlayerFromCharacter(head.Parent)
                     if plr then shared.locked = plr end
@@ -1680,7 +1676,7 @@ task.spawn(function()
             if S.silent then
                 silentTxt = "Silent Aim:ON"
                 if shared.locked then
-                    pcall(function() silentTxt = silentTxt .. " Target:" .. tostring(shared.locked.DisplayName or shared.locked.Name) end)
+                    pcall(function() silentTxt = silentTxt .. " Target:" .. tostring(shared.locked.DisplayName or shared.locked.Name) .. " " .. tostring(shared.silentAng or "?") .. "°" end)
                 end
             end
             status.Text = "Lobby:" .. total .. "\n" .. silentTxt .. tapInfo
