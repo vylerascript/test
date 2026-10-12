@@ -1410,20 +1410,6 @@ local function silentCacheTick()
     else
         shared.silentCache = nil
     end
-    -- Kamera-Microassist (Halten ODER Always On): Blick ans Ziel heran, damit
-    -- der Server den Treffer anerkennt (Blick vs. Treffer-Check)
-    if S.silent and (S.bindHeld or S.touchHold or S.immer) and shared.silentCache then
-        pcall(function()
-            local camNow = Workspace.CurrentCamera
-            local h = shared.silentCache
-            local ch = h.Parent
-            local hum = ch and ch:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health > 0 and camNow then
-                local camPos = camNow.CFrame.Position
-                camNow.CFrame = camNow.CFrame:Lerp(CFrame.new(camPos, h.Position), 0.08)
-            end
-        end)
-    end
     if fovHud then
         pcall(function()
             local mk = shared.silentCache
