@@ -2293,7 +2293,7 @@ local function ghostResit()
 end
 local function ghostSeated(seat, hum)
     if os.clock() < ghostPauseUntil then
-        tapLog("Ghost", "Pause " .. math.floor(ghostPauseUntil - os.clock()) .. "s (CD 50s)")
+        tapLog("Ghost", "Cooldown = " .. math.floor(ghostPauseUntil - os.clock()) .. "sec")
         task.wait(5)
         return
     end
@@ -2676,13 +2676,13 @@ local function ghostSeated(seat, hum)
             ghostFails = 0
             ghostSkips = 0
             ghostPauseUntil = os.clock() + 50
-            tapLog("Ghost", "Geld! 50s Pause")
+            tapLog("Ghost", "Cooldown = 50sec")
             pcall(function() ghostDone[pr] = os.clock() + 900 end)
         else
             ghostFails = ghostFails + 1
             if ghostFails >= 2 then
                 ghostPauseUntil = os.clock() + 50
-                tapLog("Ghost", "Game-CD! 50s Pause")
+                tapLog("Ghost", "Cooldown = 50sec")
             end
         end
     end
