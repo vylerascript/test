@@ -2699,10 +2699,16 @@ local function ghostSeated(seat, hum)
                 end
             end
             facePart = best or bestAny
-            if facePart then hrp.CFrame = CFrame.new(hrp.Position, facePart.Position) end
+            if facePart then
+                hrp.CFrame = CFrame.new(hrp.Position, facePart.Position)
+                tapLog("Ghost", "Ziel: " .. tostring(facePart.Name))
+            else
+                tapLog("Ghost", "kein Glas nah!")
+            end
         end
     end)
     local fist = equipFist()
+    if not fist then tapLog("Ghost", "keine Faust!") end
     local paidEarly = false
     for i = 1, 8 do
         if not S.ghostFarm then break end
