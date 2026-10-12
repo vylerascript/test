@@ -28,7 +28,7 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     immer = false, capturing = false, bindHeld = false,
     bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
     bindName = "Right Mouse",
-    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, ghostFarm = false, farmed = 0,
+    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, ghostFarm = false, farmed = 0, assist = false,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
     nameColorName = "Green", nameColor = Color3.fromRGB(0, 255, 130),
     boxColorName = "Cyan", boxColor = Color3.fromRGB(0, 220, 255),
@@ -592,7 +592,7 @@ tabPlayerC.CornerRadius = UDim.new(0, 8)
 tabPlayerC.Parent = tabPlayer
 tabPlayer.Parent = frame
 
-local leftCard = mkCard(frame, 12, 132, 476, 326)
+local leftCard = mkCard(frame, 12, 132, 476, 360)
 local rightCard = mkCard(frame, 12, 132, 476, 416)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
@@ -675,6 +675,9 @@ bFpsMC.CornerRadius = UDim.new(0, 8)
 bFpsMC.Parent = bFpsM
 bFpsM.Parent = leftCard
 bFpsM.Activated:Connect(function() fpsBoost() end)
+local tAssist = mkToggle(leftCard, 326, "Cam Assist",
+    function() return S.assist end,
+    function(v) S.assist = v end)
 
 local bESP = mkToggle(rightCard, 30, "ESP",
     function() return S.esp end,
@@ -785,11 +788,11 @@ local tSpec = mkToggle(playerCard, 132, "Spectate",
         end
     end)
 
-local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM }
+local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tAssist }
 local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC, bTracer }
 local leftOpen, rightOpen = true, true
 local function relayout()
-    local lh = leftOpen and 326 or 26
+    local lh = leftOpen and 360 or 26
     local rh = rightOpen and 416 or 26
     leftCard.Size = UDim2.new(0, 476, 0, lh)
     rightCard.Size = UDim2.new(0, 476, 0, rh)
@@ -1419,6 +1422,19 @@ local function silentCacheTick()
         end
     else
         shared.silentCache = nil
+    end
+    -- Cam Assist (Toggle!): Blick zieht ans Ziel -> Server erkennt Treffer an
+    if S.silent and S.assist and (S.bindHeld or S.touchHold or S.immer) and shared.silentCache then
+        pcall(function()
+            local camNow = Workspace.CurrentCamera
+            local h = shared.silentCache
+            local ch = h.Parent
+            local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 and camNow then
+                local camPos = camNow.CFrame.Position
+                camNow.CFrame = camNow.CFrame:Lerp(CFrame.new(camPos, h.Position), 0.08)
+            end
+        end)
     end
     if fovHud then
         pcall(function()
