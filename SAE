@@ -2252,23 +2252,6 @@ local function ghostNotSeated()
     task.wait(1.5)
 end
 local function ghostResit()
-    -- weggerollt? Roller zurückholen (kleiner Nudge zum Spieler)
-    pcall(function()
-        local hrp = myHRP()
-        local v = Workspace:FindFirstChild("Vehicles")
-        if hrp and v then
-            for _, c in ipairs(v:GetChildren()) do
-                if string.find(c.Name, lp.Name, 1, true) then
-                    local cf = c:GetBoundingBox()
-                    if (cf.Position - hrp.Position).Magnitude > 12 then
-                        c:PivotTo(CFrame.new(hrp.Position + Vector3.new(0, 2, 3)))
-                        task.wait(0.5)
-                    end
-                    break
-                end
-            end
-        end
-    end)
     pcall(function()
         if fireproximityprompt then
             for attempt = 1, 6 do
@@ -2283,6 +2266,27 @@ local function ghostResit()
                 local hrp = myHRP()
                 local myP = hrp and hrp.Position or nil
                 if myP then
+                    -- Roller festhalten: heranziehen + bremsen, dann einsteigen
+                    pcall(function()
+                        local v = Workspace:FindFirstChild("Vehicles")
+                        if v then
+                            for _, c in ipairs(v:GetChildren()) do
+                                if string.find(c.Name, lp.Name, 1, true) then
+                                    local cf = c:GetBoundingBox()
+                                    if (cf.Position - myP).Magnitude > 8 then
+                                        c:PivotTo(CFrame.new(myP + Vector3.new(0, 2, 2)))
+                                    end
+                                    for _, d in ipairs(c:GetDescendants()) do
+                                        if d:IsA("BasePart") then
+                                            d.AssemblyLinearVelocity = Vector3.zero
+                                            d.AssemblyAngularVelocity = Vector3.zero
+                                        end
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end)
                     local best = findDrive(myP, 18)
                     if best then fireproximityprompt(best) end
                 end
