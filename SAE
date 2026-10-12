@@ -1615,7 +1615,7 @@ task.spawn(function()
                     pcall(function() silentTxt = silentTxt .. " Target:" .. tostring(shared.locked.DisplayName or shared.locked.Name) end)
                 end
             end
-            status.Text = "Lobby:" .. total .. " SH:" .. tostring(shared.silentCalls or 0) .. " CH:" .. tostring(shared.crossN or 0) .. (S.ghostFarm and (" FM:" .. tostring(S.farmed or 0)) or "") .. (S.ghostFarm and (fireproximityprompt and " FP:ok" or " FP:NIL!") or "") .. "\n" .. silentTxt .. tapInfo
+            status.Text = "Lobby:" .. total .. "\n" .. silentTxt .. tapInfo
             if statusDot then
                 statusDot.BackgroundColor3 = S.silent and ACC or (S.esp and Color3.fromRGB(0, 220, 100) or Color3.fromRGB(90, 95, 115))
             end
@@ -2176,7 +2176,6 @@ end
 local ghostLastTP = 0
 local ghostIdx = 0
 local ghostDone = {}
-local ghostPaid = {}
 local ghostSpots = {}
 local ghostGlass = {}
 local ghostTick = 0
@@ -2312,11 +2311,7 @@ local function ghostSeated(seat, hum)
     local candList = {}
     for _, c in ipairs(ghostSpots) do
         local okc = pcall(function() return c.Parent ~= nil end)
-        if okc then
-            local t = ghostDone[c] or 0
-            local tp = ghostPaid[c] or 0
-            if os.clock() - t > 300 and os.clock() - tp > 900 then table.insert(candList, c) end
-        end
+        if okc and (ghostDone[c] or 0) < os.clock() then table.insert(candList, c) end
     end
     if #candList == 0 then
         tapLog("Ghost", "alle Autos CD/bezahlt, warte")
@@ -2365,13 +2360,10 @@ local function ghostSeated(seat, hum)
                         end
                     end)
                     if dd and dd < bestD - 5 then
-                        local t = ghostDone[c] or 0
-                        local tp = ghostPaid[c] or 0
+                        local left = (ghostDone[c] or 0) - os.clock()
                         local why = "?"
-                        if t > 0 and os.clock() - t <= 300 then
-                            why = "Pause " .. math.floor(300 - (os.clock() - t)) .. "s"
-                        elseif tp > 0 and os.clock() - tp <= 900 then
-                            why = "bezahlt"
+                        if left > 0 then
+                            why = "Pause " .. math.floor(left) .. "s"
                         else
                             local en = true
                             pcall(function() en = c.Enabled end)
@@ -2403,7 +2395,7 @@ local function ghostSeated(seat, hum)
         end
     end
     if not (live and glassOk) then
-        ghostDone[pr] = os.clock()
+        ghostDone[pr] = os.clock() + 180
         ghostSkips = ghostSkips + 1
         if ghostSkips >= 3 then
             ghostSkips = 0
@@ -2430,7 +2422,7 @@ local function ghostSeated(seat, hum)
         if land then landOk = spotClear(m, land) end
     end)
     if not landOk then
-        ghostDone[pr] = os.clock()
+        ghostDone[pr] = os.clock() + 60
         tapLog("Ghost", "kein Landeplatz, weiter")
         return
     end
@@ -2487,7 +2479,7 @@ local function ghostSeated(seat, hum)
         end)
     end
     if not there then
-        ghostDone[pr] = os.clock()
+        ghostDone[pr] = os.clock() + 60
         tapLog("Ghost", "TP daneben, weiter")
         return
     end
@@ -2518,7 +2510,7 @@ local function ghostSeated(seat, hum)
         end)
         task.wait(0.5)
         if not clearNow() then
-            ghostDone[pr] = os.clock()
+            ghostDone[pr] = os.clock() + 60
             tapLog("Ghost", "kein Platz, weiter")
             return
         end
@@ -2556,7 +2548,7 @@ local function ghostSeated(seat, hum)
     end)
     if not pClear then
         tapLog("Ghost", "Spieler im Clip, weiter")
-        pcall(function() ghostDone[pr] = os.clock() end)
+        pcall(function() ghostDone[pr] = os.clock() + 60 end)
         ghostResit()
         task.wait(0.6)
         return
@@ -2606,7 +2598,7 @@ local function ghostSeated(seat, hum)
     end)
     if not inRange then
         tapLog("Ghost", "Spot unerreichbar, weiter")
-        pcall(function() ghostDone[pr] = os.clock() end)
+        pcall(function() ghostDone[pr] = os.clock() + 120 end)
         ghostResit()
         task.wait(0.6)
         return
@@ -2685,7 +2677,7 @@ local function ghostSeated(seat, hum)
             ghostSkips = 0
             ghostPauseUntil = os.clock() + 50
             tapLog("Ghost", "Geld! 50s Pause")
-            pcall(function() ghostPaid[pr] = os.clock() end)
+            pcall(function() ghostDone[pr] = os.clock() + 900 end)
         else
             ghostFails = ghostFails + 1
             if ghostFails >= 2 then
@@ -2694,7 +2686,9 @@ local function ghostSeated(seat, hum)
             end
         end
     end
-    pcall(function() ghostDone[pr] = os.clock() end)
+    pcall(function()
+        if (ghostDone[pr] or 0) < os.clock() + 60 then ghostDone[pr] = os.clock() + 180 end
+    end)
     ghostResit()
     task.wait(0.6)
 end
