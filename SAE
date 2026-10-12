@@ -1092,15 +1092,17 @@ task.spawn(function()
                             aimP = aimP + lead
                         end
                     end)
-                    -- Enger Kegel: nur umlenken wenn Blick nah dran (Server lehnt Weite ab)
+                    -- Enger Kegel AB KAMERA (kein Mündungs-Parallax): nur umlenken wenn Blick nah dran
                     local okAng = false
                     pcall(function()
                         local camNow = Workspace.CurrentCamera
-                        if camNow and params.Origin then
+                        if camNow then
                             local look = camNow.CFrame.LookVector
-                            local dir = (aimP - params.Origin).Unit
+                            local dir = (aimP - camNow.CFrame.Position).Unit
                             local dot = math.clamp(look.X * dir.X + look.Y * dir.Y + look.Z * dir.Z, -1, 1)
-                            if math.deg(math.acos(dot)) <= 15 then okAng = true end
+                            if math.deg(math.acos(dot)) <= 20 then okAng = true end
+                        else
+                            okAng = true
                         end
                     end)
                     if not okAng then return end
