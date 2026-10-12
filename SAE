@@ -2137,6 +2137,42 @@ local function spotClear(m, p)
     end
     return true
 end
+-- Seitlich ans Fenster (wie Bild): radial vom Auto weg, parallel ausgerichtet
+local function ghostSideLanding(m, pr, pos)
+    local ccf = nil
+    pcall(function()
+        local host = farmHost(pr)
+        local carM, p, depth = nil, host and host.Parent or nil, 0
+        while p and p ~= workspace and depth < 4 do
+            if p:IsA("Model") then carM = p end
+            p = p.Parent
+            depth = depth + 1
+        end
+        if carM then
+            local c, s = carM:GetBoundingBox()
+            if (c.Position - pos).Magnitude <= (s.Magnitude / 2 + 3) then ccf = c end
+        end
+    end)
+    if not ccf then return nil end
+    local dir = Vector3.new(pos.X - ccf.Position.X, 0, pos.Z - ccf.Position.Z)
+    if dir.Magnitude < 0.5 then return nil end
+    dir = dir.Unit
+    local target = pos + dir * 2.6
+    local gy = nil
+    pcall(function()
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = { lp.Character, m }
+        params.IgnoreWater = true
+        local hit = Workspace:Raycast(target + Vector3.new(0, 5, 0), Vector3.new(0, -20, 0), params)
+        if hit and hit.Position and not isCarPart(hit.Instance) then
+            gy = hit.Position.Y
+        end
+    end)
+    if not gy then return nil end
+    local _, yaw, _ = ccf:ToOrientation()
+    return CFrame.new(target.X, gy + 1, target.Z) * CFrame.Angles(0, yaw, 0)
+end
 local ghostLastTP = 0
 local ghostIdx = 0
 local ghostDone = {}
@@ -2383,9 +2419,12 @@ local function ghostSeated(seat, hum)
         local dt = os.clock() - (ghostLastTP or 0)
         if dt < 12 then task.wait(12 - dt) end
     end
-    -- Landeplatz VORHER prüfen (Fallback nie blind!)
+    -- Landeplatz VORHER prüfen: erst seitlich ans Fenster, sonst alte Suche (Fallback nie blind!)
     local land = nil
-    pcall(function() land = ghostLanding(pos, { lp.Character, m }) end)
+    pcall(function() land = ghostSideLanding(m, pr, pos) end)
+    if not land then
+        pcall(function() land = ghostLanding(pos, { lp.Character, m }) end)
+    end
     local landOk = false
     pcall(function()
         if land then landOk = spotClear(m, land) end
