@@ -2351,8 +2351,10 @@ local function ghostResit()
 end
 local function ghostSeated(seat, hum)
     if os.clock() < ghostPauseUntil then
-        tapLog("Ghost", "Cooldown = " .. math.floor(ghostPauseUntil - os.clock()) .. "sec")
-        task.wait(5)
+        while S.ghostFarm and os.clock() < ghostPauseUntil do
+            tapLog("Ghost", "Cooldown = " .. math.floor(ghostPauseUntil - os.clock()) .. "sec")
+            task.wait(1)
+        end
         return
     end
     local m = seat:FindFirstAncestorOfClass("Model")
