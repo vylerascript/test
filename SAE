@@ -1625,11 +1625,9 @@ task.spawn(function()
                     end
                 end
             end
-            local holdActive = shared.silentHold and shared.silentHold() or false
-            local holdTxt = holdActive and "HOLD" or (S.immer and "always" or "--")
             local silentTxt = "Silent:OFF"
             if S.silent then
-                silentTxt = "Silent:ON+" .. holdTxt
+                silentTxt = "Silent:ON"
                 if shared.locked then
                     pcall(function() silentTxt = silentTxt .. " Target:" .. tostring(shared.locked.DisplayName or shared.locked.Name) end)
                 end
