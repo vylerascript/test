@@ -154,7 +154,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -70, 0, 24)
 title.Position = UDim2.new(0, 14, 0, 11)
 title.BackgroundTransparency = 1
-title.Text = "SLR  *  COMBAT  *  v5.4"
+title.Text = "SLR  *  COMBAT  *  v5.5"
 title.TextSize = 15
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.TextColor3 = TXT
@@ -2788,17 +2788,27 @@ local function ghostSeated(seat, hum)
     task.wait(2)
     do
         local m1 = ghostMoney()
-        if m0 ~= nil and m1 ~= nil and (m1 - m0) > 0 then
+        local function paid()
             ghostFails = 0
             ghostSkips = 0
             ghostPauseUntil = os.clock() + 50
             tapLog("Ghost", "Cooldown = 50sec")
             pcall(function() ghostDone[pr] = os.clock() + 900 end)
+        end
+        if m0 ~= nil and m1 ~= nil and (m1 - m0) > 0 then
+            paid()
         else
-            ghostFails = ghostFails + 1
-            if ghostFails >= 2 then
-                ghostPauseUntil = os.clock() + 50
-                tapLog("Ghost", "Cooldown = 50sec")
+            -- Geld kommt oft spät: 3s nachprüfen bevor trocken gewertet wird
+            task.wait(3)
+            local m2 = ghostMoney()
+            if m0 ~= nil and m2 ~= nil and (m2 - m0) > 0 then
+                paid()
+            else
+                ghostFails = ghostFails + 1
+                if ghostFails >= 2 then
+                    ghostPauseUntil = os.clock() + 50
+                    tapLog("Ghost", "Cooldown = 50sec")
+                end
             end
         end
     end
