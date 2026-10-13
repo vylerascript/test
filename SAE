@@ -1121,6 +1121,35 @@ task.spawn(function()
                             if setclipboard then setclipboard(msg) end
                         end)
                     end
+                    -- Kopf-Sanity: Höhe über HRP prüfen (Stream-Leichen?), sonst HRP+2
+                    pcall(function()
+                        local ch = head.Parent
+                        local hrp = ch and ch:FindFirstChild("HumanoidRootPart")
+                        if hrp then
+                            local dy = head.Position.Y - hrp.Position.Y
+                            if dy < 0.5 or dy > 4 then
+                                aimP = hrp.Position + Vector3.new(0, 2, 0)
+                            end
+                        end
+                    end)
+                    -- Mündungs-Sichtlinie: Wand zwischen Mündung und Ziel? -> nicht umlenken
+                    local clearShot = false
+                    pcall(function()
+                        local ch = head.Parent
+                        local rp = RaycastParams.new()
+                        rp.FilterType = Enum.RaycastFilterType.Exclude
+                        rp.FilterDescendantsInstances = { lp.Character, ch }
+                        rp.IgnoreWater = true
+                        local hit = Workspace:Raycast(params.Origin, aimP - params.Origin, rp)
+                        if not hit then
+                            clearShot = true
+                        else
+                            pcall(function()
+                                if hit.Instance and hit.Instance:IsDescendantOf(ch) then clearShot = true end
+                            end)
+                        end
+                    end)
+                    if not clearShot then return end
                     -- Origin an Kamera angleichen (kohärent mit Direction) + Range auf
                     pcall(function()
                         local camNow = Workspace.CurrentCamera
