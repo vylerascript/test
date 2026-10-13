@@ -1150,12 +1150,8 @@ task.spawn(function()
                         end
                     end)
                     if not clearShot then return end
-                    -- Origin an Kamera angleichen (kohärent mit Direction) + Range auf
+                    -- NUR Range auf (Origin bleibt echte Waffe: Server verwirft Cam-Origin!)
                     pcall(function()
-                        local camNow = Workspace.CurrentCamera
-                        if camNow then
-                            params.Origin = camNow.CFrame.Position
-                        end
                         if params.MaxDistance ~= nil then params.MaxDistance = 9999 end
                         if params.Range ~= nil then params.Range = 9999 end
                     end)
