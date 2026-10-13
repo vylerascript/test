@@ -598,9 +598,23 @@ local rightCard = mkCard(frame, 12, 132, 476, 416)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
 
+local savedMB = nil
 local bSilent = mkToggle(leftCard, 30, "Silent Aim",
     function() return S.silent end,
-    function(v) S.silent = v if not v then shared.locked = nil end updateFovCircle() end)
+    function(v)
+        S.silent = v
+        if not v then shared.locked = nil end
+        -- ShiftLock-Feeling: Maus-Mitte bei Silent an, zurück bei aus
+        pcall(function()
+            if v then
+                savedMB = UIS.MouseBehavior
+                UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+            else
+                UIS.MouseBehavior = savedMB or Enum.MouseBehavior.Default
+            end
+        end)
+        updateFovCircle()
+    end)
 
 local keyValBox, keyValRefresh
 local bKeyCap = Instance.new("Frame")
@@ -1037,9 +1051,14 @@ local function silentTarget()
     return best
 end
 local function silentHold()
+    if S.silent then return true end
     if S.immer then return true end
     if S.touchHold then return true end
     return S.bindHeld
+end
+-- Aim-Hold (Follow/Assist): Silent an = immer aktiv (verschmolzen)
+local function aimHeld()
+    return S.bindHeld or S.touchHold or S.silent
 end
 shared.silentTarget = silentTarget
 shared.silentHold = silentHold
@@ -1496,7 +1515,7 @@ local function silentCacheTick()
         shared.silentCache = nil
     end
     -- Cam Assist (Toggle!): Blick zieht ans Ziel -> Server erkennt Treffer an
-    if S.silent and S.assist and (S.bindHeld or S.touchHold or S.immer) and shared.silentCache then
+    if S.silent and S.assist and aimHeld() and shared.silentCache then
         pcall(function()
             local camNow = Workspace.CurrentCamera
             local h = shared.silentCache
@@ -1578,7 +1597,7 @@ RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
     -- FOLLOW (weich, nur beim Halten): MAUS aufs Ziel ( echtes Lock),
     -- Fallback Kamera wenn mousemoverel fehlt
     pcall(function()
-        if S.follow and (S.bindHeld or S.touchHold) and shared.silentCache then
+        if S.follow and aimHeld() and shared.silentCache then
             local h = shared.silentCache
             local ch = h.Parent
             local hum = ch and ch:FindFirstChildOfClass("Humanoid")
