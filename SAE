@@ -1591,10 +1591,13 @@ RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
                             local mok, m = pcall(function() return UIS:GetMouseLocation() end)
                             if mok and m then
                                 local dx, dy = hv.X - m.X, hv.Y - m.Y
-                                if math.abs(dx) + math.abs(dy) > 8 then
-                                    local sx = math.clamp(dx * 0.18, -40, 40)
-                                    local sy = math.clamp(dy * 0.18, -40, 40)
-                                    mousemoverel(sx, sy)
+                                if math.abs(dx) + math.abs(dy) > 6 then
+                                    shared.mouseTick = (shared.mouseTick or 0) + 1
+                                    if shared.mouseTick % 2 == 0 then
+                                        local sx = math.clamp(dx, -60, 60)
+                                        local sy = math.clamp(dy, -60, 60)
+                                        mousemoverel(sx, sy)
+                                    end
                                     moved = true
                                 end
                             end
