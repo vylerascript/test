@@ -598,21 +598,11 @@ local rightCard = mkCard(frame, 12, 132, 476, 416)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
 
-local savedMB = nil
 local bSilent = mkToggle(leftCard, 30, "Silent Aim",
     function() return S.silent end,
     function(v)
         S.silent = v
         if not v then shared.locked = nil end
-        -- ShiftLock-Feeling: Maus-Mitte bei Silent an, zurück bei aus
-        pcall(function()
-            if v then
-                savedMB = UIS.MouseBehavior
-                UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
-            else
-                UIS.MouseBehavior = savedMB or Enum.MouseBehavior.Default
-            end
-        end)
         updateFovCircle()
     end)
 
