@@ -1574,7 +1574,8 @@ RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
             end
         end
     end)
-    -- FOLLOW (weich, nur beim Halten): Kamera zieht mit
+    -- FOLLOW (weich, nur beim Halten): MAUS aufs Ziel ( echtes Lock),
+    -- Fallback Kamera wenn mousemoverel fehlt
     pcall(function()
         if S.follow and (S.bindHeld or S.touchHold) and shared.silentCache then
             local h = shared.silentCache
@@ -1582,8 +1583,26 @@ RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
             local hum = ch and ch:FindFirstChildOfClass("Humanoid")
             local camNow = Workspace.CurrentCamera
             if hum and hum.Health > 0 and camNow then
-                local camPos = camNow.CFrame.Position
-                camNow.CFrame = camNow.CFrame:Lerp(CFrame.new(camPos, h.Position), 0.15)
+                local moved = false
+                pcall(function()
+                    if mousemoverel then
+                        local hv, hon = camNow:WorldToViewportPoint(h.Position)
+                        if hon then
+                            local mok, m = pcall(function() return UIS:GetMouseLocation() end)
+                            if mok and m then
+                                local dx, dy = hv.X - m.X, hv.Y - m.Y
+                                if math.abs(dx) + math.abs(dy) > 4 then
+                                    mousemoverel(dx * 0.35, dy * 0.35)
+                                    moved = true
+                                end
+                            end
+                        end
+                    end
+                end)
+                if not moved then
+                    local camPos = camNow.CFrame.Position
+                    camNow.CFrame = camNow.CFrame:Lerp(CFrame.new(camPos, h.Position), 0.15)
+                end
             end
         end
     end)
