@@ -28,7 +28,7 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     immer = false, capturing = false, bindHeld = false,
     bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
     bindName = "Right Mouse",
-    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, ghostFarm = false, farmed = 0, assist = false, camlock = false,
+    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, ghostFarm = false, farmed = 0, assist = false, camlock = false, follow = false,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
     nameColorName = "Green", nameColor = Color3.fromRGB(0, 255, 130),
     boxColorName = "Cyan", boxColor = Color3.fromRGB(0, 220, 255),
@@ -593,7 +593,7 @@ tabPlayerC.CornerRadius = UDim.new(0, 8)
 tabPlayerC.Parent = tabPlayer
 tabPlayer.Parent = frame
 
-local leftCard = mkCard(frame, 12, 132, 476, 394)
+local leftCard = mkCard(frame, 12, 132, 476, 428)
 local rightCard = mkCard(frame, 12, 132, 476, 416)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
@@ -682,6 +682,9 @@ local tAssist = mkToggle(leftCard, 326, "Cam Assist",
 local tCamlock = mkToggle(leftCard, 360, "Cam Lock",
     function() return S.camlock end,
     function(v) S.camlock = v end)
+local tFollow = mkToggle(leftCard, 394, "Follow (hold)",
+    function() return S.follow end,
+    function(v) S.follow = v end)
 
 local bESP = mkToggle(rightCard, 30, "ESP",
     function() return S.esp end,
@@ -792,11 +795,11 @@ local tSpec = mkToggle(playerCard, 132, "Spectate",
         end
     end)
 
-local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tAssist, tCamlock }
+local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tAssist, tCamlock, tFollow }
 local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC, bTracer }
 local leftOpen, rightOpen = true, true
 local function relayout()
-    local lh = leftOpen and 394 or 26
+    local lh = leftOpen and 428 or 26
     local rh = rightOpen and 416 or 26
     leftCard.Size = UDim2.new(0, 476, 0, lh)
     rightCard.Size = UDim2.new(0, 476, 0, rh)
@@ -1257,6 +1260,22 @@ pcall(function()
     hs.Parent = fovHud
     fovHud.Parent = fovGui
 end)
+-- Roter Ziel-Punkt (NyTro-Stil)
+local redDot = nil
+pcall(function()
+    if not fovGui then return end
+    redDot = Instance.new("Frame")
+    redDot.Name = "RedDot"
+    redDot.AnchorPoint = Vector2.new(0.5, 0.5)
+    redDot.Size = UDim2.new(0, 10, 0, 10)
+    redDot.BackgroundColor3 = Color3.fromRGB(255, 40, 40)
+    redDot.BorderSizePixel = 0
+    redDot.Visible = false
+    local rdc = Instance.new("UICorner")
+    rdc.CornerRadius = UDim.new(1, 0)
+    rdc.Parent = redDot
+    redDot.Parent = fovGui
+end)
 
 -- Key-Capture + Hold-Erkennung
 pcall(function()
@@ -1512,6 +1531,28 @@ local function silentCacheTick()
             fovHud.Visible = false
         end)
     end
+    -- Roter Punkt aufs Ziel (nur wenn Follow an)
+    if redDot then
+        pcall(function()
+            local mk = shared.silentCache
+            local show = false
+            if S.follow and mk then
+                pcall(function()
+                    local ch = mk.Parent
+                    local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+                    if hum and hum.Health > 0 and mk.Parent ~= nil then
+                        local camNow = Workspace.CurrentCamera
+                        local hv, hon = camNow:WorldToViewportPoint(mk.Position)
+                        if hon then
+                            redDot.Position = UDim2.new(0, hv.X, 0, hv.Y)
+                            show = true
+                        end
+                    end
+                end)
+            end
+            redDot.Visible = show
+        end)
+    end
 end
 RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
     if not alive() then
@@ -1530,6 +1571,19 @@ RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
                 if camNow then
                     camNow.CFrame = CFrame.new(camNow.CFrame.Position, head.Position)
                 end
+            end
+        end
+    end)
+    -- FOLLOW (weich, nur beim Halten): Kamera zieht mit
+    pcall(function()
+        if S.follow and (S.bindHeld or S.touchHold) and shared.silentCache then
+            local h = shared.silentCache
+            local ch = h.Parent
+            local hum = ch and ch:FindFirstChildOfClass("Humanoid")
+            local camNow = Workspace.CurrentCamera
+            if hum and hum.Health > 0 and camNow then
+                local camPos = camNow.CFrame.Position
+                camNow.CFrame = camNow.CFrame:Lerp(CFrame.new(camPos, h.Position), 0.15)
             end
         end
     end)
