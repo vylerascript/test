@@ -38,6 +38,7 @@ shared.S = S
 shared.locked = nil
 shared.blocked = {}
 shared.silentCalls = 0
+shared.silentLogged = nil
 shared.crossN = 0
 
 local WEAPONS = { "glock", "cz75", "spas", "mp5", "ump", "apc", "draco", "micro", "arp", "scar", "baton", "tazer", "c4", "button", "p90", "viper", "drum", "knife", "revolver", "uzi", "deagle", "pistol", "rifle", "shotgun", "ak", "smg", "tx22", "frt", "hipoint", "hi-point", "springfield", "doublebarrel", "barrel", "fmg", "ruger", "makarov", "m4", "m16", "ar15", "ar-15", "aug", "g36", "lmg", "minigun", "rpg", "sniper", "m1911", "tec", "fiveseven", "five-seven", "deserteagle", "eagle", "mossberg", "remington", "python", "vector", "kriss", "beretta", "m9", "sig", "hk", "galil", "tsr", "triarc",
@@ -1104,6 +1105,30 @@ task.spawn(function()
                             local dot = math.clamp(look.X * dir.X + look.Y * dir.Y + look.Z * dir.Z, -1, 1)
                             shared.silentAng = math.floor(math.deg(math.acos(dot)))
                         end
+                    end)
+                    -- First-Shot-Diagnose: alle params-Felder einmalig loggen
+                    if not shared.silentLogged then
+                        shared.silentLogged = true
+                        pcall(function()
+                            local parts = { "[SLR-PARAMS]" }
+                            if type(params) == "table" then
+                                for k, v in pairs(params) do
+                                    table.insert(parts, tostring(k) .. " (" .. type(v) .. ")")
+                                end
+                            end
+                            local msg = table.concat(parts, " | ")
+                            warn(msg)
+                            if setclipboard then setclipboard(msg) end
+                        end)
+                    end
+                    -- Origin an Kamera angleichen (kohärent mit Direction) + Range auf
+                    pcall(function()
+                        local camNow = Workspace.CurrentCamera
+                        if camNow then
+                            params.Origin = camNow.CFrame.Position
+                        end
+                        if params.MaxDistance ~= nil then params.MaxDistance = 9999 end
+                        if params.Range ~= nil then params.Range = 9999 end
                     end)
                     params.Direction = (aimP - params.Origin).Unit
                     local plr = head.Parent and game:GetService("Players"):GetPlayerFromCharacter(head.Parent)
