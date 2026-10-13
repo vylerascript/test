@@ -28,7 +28,7 @@ local S = { esp = false, espMaxDist = 2000, aimFOV = 400,
     immer = false, capturing = false, bindHeld = false,
     bind = { kind = "mouse", btn = Enum.UserInputType.MouseButton2 },
     bindName = "Right Mouse",
-    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, ghostFarm = false, farmed = 0, assist = false,
+    box = false, box2d = false, tracer = false, wallCheck = false, touchHold = false, robEsp = false, farmEsp = false, instant = false, ghostFarm = false, farmed = 0, assist = false, camlock = false,
     espColorName = "Green", espColor = Color3.fromRGB(0, 255, 130),
     nameColorName = "Green", nameColor = Color3.fromRGB(0, 255, 130),
     boxColorName = "Cyan", boxColor = Color3.fromRGB(0, 220, 255),
@@ -593,7 +593,7 @@ tabPlayerC.CornerRadius = UDim.new(0, 8)
 tabPlayerC.Parent = tabPlayer
 tabPlayer.Parent = frame
 
-local leftCard = mkCard(frame, 12, 132, 476, 360)
+local leftCard = mkCard(frame, 12, 132, 476, 394)
 local rightCard = mkCard(frame, 12, 132, 476, 416)
 local leftHead, leftChev = mkCardHead(leftCard, "SILENT AIM")
 local rightHead, rightChev = mkCardHead(rightCard, "VISUAL")
@@ -679,6 +679,9 @@ bFpsM.Activated:Connect(function() fpsBoost() end)
 local tAssist = mkToggle(leftCard, 326, "Cam Assist",
     function() return S.assist end,
     function(v) S.assist = v end)
+local tCamlock = mkToggle(leftCard, 360, "Cam Lock",
+    function() return S.camlock end,
+    function(v) S.camlock = v end)
 
 local bESP = mkToggle(rightCard, 30, "ESP",
     function() return S.esp end,
@@ -789,11 +792,11 @@ local tSpec = mkToggle(playerCard, 132, "Spectate",
         end
     end)
 
-local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tAssist }
+local leftRows = { bSilent, bKeyCap, bImmer, sldFov, sldDist, bHopM, bFpsM, tAssist, tCamlock }
 local rightRows = { bESP, bPart, bBox2d, bWall, tRob, bEspDist, labMeter, bColor, labName, bNameColor, labBox, bBoxC, bTracer }
 local leftOpen, rightOpen = true, true
 local function relayout()
-    local lh = leftOpen and 360 or 26
+    local lh = leftOpen and 394 or 26
     local rh = rightOpen and 416 or 26
     leftCard.Size = UDim2.new(0, 476, 0, lh)
     rightCard.Size = UDim2.new(0, 476, 0, rh)
@@ -1518,6 +1521,18 @@ RunService:BindToRenderStep("SLR_2D", Enum.RenderPriority.Last.Value, function()
     pcall(box2dTick)
     pcall(tracerTick)
     pcall(silentCacheTick)
+    -- CAM LOCK (hart): Fadenkreuz klebt am Kopf, kein Wegschauen möglich
+    pcall(function()
+        if S.camlock and shared.silentTarget then
+            local head = shared.silentTarget()
+            if head then
+                local camNow = Workspace.CurrentCamera
+                if camNow then
+                    camNow.CFrame = CFrame.new(camNow.CFrame.Position, head.Position)
+                end
+            end
+        end
+    end)
 end)
 
 -- ESP-Loop (Tags + 3D-Box, 0.5s)
